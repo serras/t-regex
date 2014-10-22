@@ -20,9 +20,6 @@ data TreeRegex' k f
   | Iter (k -> TreeRegex' k f)
   deriving Generic
 
-data Tree f = Leaf | Branch Int f f
-  deriving Generic1
-
 newtype Fix f = Fix { unFix :: f (Fix f) } deriving Generic
 newtype TreeRegex f = TreeRegex { unTreeRegex :: forall k. TreeRegex' k f }
 
@@ -58,7 +55,6 @@ instance MatchG' U1 where
 
 instance MatchG' Par1 where
   matchG' (Par1 r) (Par1 t) = match' r t
-
 
 instance Eq c => MatchG' (K1 i c) where
   matchG' (K1 r) (K1 t) _ _ = r == t
