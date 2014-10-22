@@ -35,11 +35,7 @@ match' :: (Generic1 f, MatchG' (Rep1 f))
        -> Bool
 match' Empty          _ _ _ = False
 match' Any            _ _ _ = True
-match' (In r)   (Fix t) i s = 
-  matchG' repR repT i s
-  where -- Get representations
-        repR = from1 r
-        repT = from1 t
+match' (In r)   (Fix t) i s = matchG' (from1 r) (from1 t) i s
 match' (Square n)     t i s = let Just r = lookup n s in match' r t i s
 match' (r1 :|: r2)    t i s = match' r1 t i s || match' r2 t i s
 match' (Concat r1 r2) t i s = match' (r1 i) t (i+1) ((i,r2):s)
