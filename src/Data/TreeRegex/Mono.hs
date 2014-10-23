@@ -3,35 +3,35 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
-module Data.TreeRegex where
+module Data.TreeRegex.Mono where
 
 import GHC.Generics
 
 -- As defined in page 58 of "Tree Automata Techniques and Applications"
 -- * f -> set of constructors
 -- * k -> set of iteration and concatenation positions
-data TreeRegex' k f
+data MonoRegex' k f
   = Empty
   | Any
-  | In (f (TreeRegex' k f))
+  | In (f (MonoRegex' k f))
   | Square k
-  | TreeRegex' k f :|: TreeRegex' k f
-  | Concat (k -> TreeRegex' k f) (TreeRegex' k f)
-  | Iter (k -> TreeRegex' k f)
+  | MonoRegex' k f :|: MonoRegex' k f
+  | Concat (k -> MonoRegex' k f) (MonoRegex' k f)
+  | Iter (k -> MonoRegex' k f)
   deriving Generic
 
 newtype Fix f = Fix { unFix :: f (Fix f) } deriving Generic
-newtype TreeRegex f = TreeRegex { unTreeRegex :: forall k. TreeRegex' k f }
+newtype MonoRegex f = MonoRegex { unTreeRegex :: forall k. MonoRegex' k f }
 
 match :: (Generic1 f, MatchG' (Rep1 f))
-      => TreeRegex f -> Fix f -> Bool
+      => MonoRegex f -> Fix f -> Bool
 match r t = match' (unTreeRegex r) t 0 []
 
 match' :: (Generic1 f, MatchG' (Rep1 f))
-       => TreeRegex' Integer f
+       => MonoRegex' Integer f
        -> Fix f
        -> Integer  -- Fresh variable generator
-       -> [(Integer,TreeRegex' Integer f)]  -- Ongoing substitution
+       -> [(Integer,MonoRegex' Integer f)]  -- Ongoing substitution
        -> Bool
 match' Empty          _ _ _ = False
 match' Any            _ _ _ = True
@@ -43,8 +43,8 @@ match' (Iter r)       t i s = match' (Concat r (Iter r)) t i s
 
 class MatchG' f where
   matchG' :: (Generic1 g, MatchG' (Rep1 g))
-          => f (TreeRegex' Integer g) -> f (Fix g)
-          -> Integer -> [(Integer,TreeRegex' Integer g)] -> Bool
+          => f (MonoRegex' Integer g) -> f (Fix g)
+          -> Integer -> [(Integer,MonoRegex' Integer g)] -> Bool
 
 instance MatchG' U1 where
   matchG' _ _ _ _ = True
