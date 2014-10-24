@@ -9,7 +9,9 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.TreeRegex.Mono,
+  exposed-modules:     Data.GenericK,
+                       Data.TreeRegex.Mono,
+                       Data.TreeRegex.Poly,
                        Data.TreeRegex.Example
   -- other-modules:       
   -- other-extensions:    

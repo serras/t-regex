@@ -10,41 +10,41 @@ import GHC.Generics
 -- As defined in page 58 of "Tree Automata Techniques and Applications"
 -- * f -> set of constructors
 -- * k -> set of iteration and concatenation positions
-data MonoRegex' k f
+data TreeRegex' k f
   = Empty
   | Any
-  | In (f (MonoRegex' k f))
+  | In (f (TreeRegex' k f))
   | Square k
-  | MonoRegex' k f :|: MonoRegex' k f
-  | Concat (k -> MonoRegex' k f) (MonoRegex' k f)
-  | Iter (k -> MonoRegex' k f)
+  | Choice (TreeRegex' k f) (TreeRegex' k f)
+  | Concat (k -> TreeRegex' k f) (TreeRegex' k f)
+  | Iter (k -> TreeRegex' k f)
   deriving Generic
 
 newtype Fix f = Fix { unFix :: f (Fix f) } deriving Generic
-newtype MonoRegex f = MonoRegex { unTreeRegex :: forall k. MonoRegex' k f }
+newtype TreeRegex f = TreeRegex { unTreeRegex :: forall k. TreeRegex' k f }
 
 match :: (Generic1 f, MatchG' (Rep1 f))
-      => MonoRegex f -> Fix f -> Bool
+      => TreeRegex f -> Fix f -> Bool
 match r t = match' (unTreeRegex r) t 0 []
 
 match' :: (Generic1 f, MatchG' (Rep1 f))
-       => MonoRegex' Integer f
+       => TreeRegex' Integer f
        -> Fix f
        -> Integer  -- Fresh variable generator
-       -> [(Integer,MonoRegex' Integer f)]  -- Ongoing substitution
+       -> [(Integer, TreeRegex' Integer f)]  -- Ongoing substitution
        -> Bool
 match' Empty          _ _ _ = False
 match' Any            _ _ _ = True
 match' (In r)   (Fix t) i s = matchG' (from1 r) (from1 t) i s
 match' (Square n)     t i s = let Just r = lookup n s in match' r t i s
-match' (r1 :|: r2)    t i s = match' r1 t i s || match' r2 t i s
+match' (Choice r1 r2) t i s = match' r1 t i s || match' r2 t i s
 match' (Concat r1 r2) t i s = match' (r1 i) t (i+1) ((i,r2):s)
 match' (Iter r)       t i s = match' (Concat r (Iter r)) t i s
 
 class MatchG' f where
   matchG' :: (Generic1 g, MatchG' (Rep1 g))
-          => f (MonoRegex' Integer g) -> f (Fix g)
-          -> Integer -> [(Integer,MonoRegex' Integer g)] -> Bool
+          => f (TreeRegex' Integer g) -> f (Fix g)
+          -> Integer -> [(Integer, TreeRegex' Integer g)] -> Bool
 
 instance MatchG' U1 where
   matchG' _ _ _ _ = True
