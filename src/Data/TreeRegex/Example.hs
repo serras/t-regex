@@ -58,7 +58,6 @@ aBis1 = NilOne
 aBis2 :: FixOne
 aBis2 = ConsOne 1 (ConsTwo 'a' NilOne)
 
-{-
 rBis1 :: P.TreeRegex Bis One
 rBis1 = P.TreeRegex $ P.In NilOne'
 
@@ -67,4 +66,4 @@ rBis2 = P.TreeRegex $ P.In (ConsOne' 2 (P.In NilTwo'))
 
 rBis3 :: P.TreeRegex Bis One
 rBis3 = P.TreeRegex $ P.In (ConsOne' 2 (P.In (ConsTwo' 'a' (P.In NilOne'))))
--}
+
