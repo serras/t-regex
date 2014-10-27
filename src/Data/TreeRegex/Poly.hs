@@ -6,6 +6,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE GADTs #-}
 module Data.TreeRegex.Poly where
 
 import Data.GenericK
@@ -64,27 +65,26 @@ class MatchG' (f :: k -> (k -> *) -> *) where
           => f ix (TreeRegex' Integer g) -> f ix (Fix g)
           -> Integer -> [(Integer, forall h xi. TreeRegex' Integer h xi)] -> Bool
 
-{-
-instance MatchG' U1 where
+
+instance MatchG' U1k where
   matchG' _ _ _ _ = True
 
-instance MatchG' Par1 where
-  matchG' (Par1 r) (Par1 t) = match' r t
+instance MatchG' (Par1k xi) where
+  matchG' (Par1k r) (Par1k t) = match' r t
 
-instance Eq c => MatchG' (K1 i c) where
-  matchG' (K1 r) (K1 t) _ _ = r == t
+instance MatchG' f => MatchG' (Rec1k f xi) where
+  matchG' (Rec1k r) (Rec1k t) = matchG' r t
 
-instance MatchG' f => MatchG' (Rec1 f) where
-  matchG' (Rec1 r) (Rec1 t) = matchG' r t
+instance Eq c => MatchG' (K1k i c) where
+  matchG' (K1k r) (K1k t) _ _ = r == t
 
-instance MatchG' a => MatchG' (M1 i c a) where
-  matchG' (M1 r) (M1 t) = matchG' r t
+instance (MatchG' a, MatchG' b) => MatchG' (a :++: b) where
+  matchG' (L1k r) (L1k t) i s = matchG' r t i s
+  matchG' (R1k r) (R1k t) i s = matchG' r t i s
+  matchG' _       _       _ _ = False
 
-instance (MatchG' a, MatchG' b) => MatchG' (a :+: b) where
-  matchG' (L1 r) (L1 t) i s = matchG' r t i s
-  matchG' (R1 r) (R1 t) i s = matchG' r t i s
-  matchG' _      _      _ _ = False
+instance (MatchG' a, MatchG' b) => MatchG' (a :**: b) where
+  matchG' (r1 :**: r2) (t1 :**: t2) i s = matchG' r1 t1 i s && matchG' r2 t2 i s
 
-instance (MatchG' a, MatchG' b) => MatchG' (a :*: b) where
-  matchG' (r1 :*: r2) (t1 :*: t2) i s = matchG' r1 t1 i s && matchG' r2 t2 i s
--}
+instance MatchG' f => MatchG' (Tag1k f xi) where
+  matchG' (Tag1k r) (Tag1k t) = matchG' r t
