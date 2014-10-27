@@ -3,11 +3,14 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE TypeFamilies #-}
 module Data.TreeRegex.Example where
 
 import qualified Data.TreeRegex.Mono as M
 import qualified Data.TreeRegex.Poly as P
 import GHC.Generics
+import Data.GenericK
 
 data Tree' f = Leaf' | Branch' Int f f
   deriving Generic1
@@ -38,19 +41,19 @@ rTree3 = M.TreeRegex $ M.Iter (\k -> BranchR 2 (M.Square k) (M.Square k) `M.Choi
 
 data Ty = One | Two
 
-data Bis f ix where
-  NilOne'  :: Bis f One
-  ConsOne' :: Int -> f Two -> Bis f One
-  NilTwo'  :: Bis f Two
-  ConsTwo' :: Char -> f One -> Bis f Two
+data Bis ix f where
+  NilOne'  :: Bis One f
+  ConsOne' :: Int -> f Two -> Bis One f
+  NilTwo'  :: Bis Two f
+  ConsTwo' :: Char -> f One -> Bis Two f
 
 type FixOne = P.Fix Bis One
 type FixTwo = P.Fix Bis Two
 
-pattern NilOne       = P.Fix NilOne'
-pattern ConsOne x xs = P.Fix (ConsOne' x xs)
-pattern NilTwo       = P.Fix NilTwo'
-pattern ConsTwo x xs = P.Fix (ConsTwo' x xs)
+pattern NilOne       = P.F NilOne'
+pattern ConsOne x xs = P.F (ConsOne' x xs)
+pattern NilTwo       = P.F NilTwo'
+pattern ConsTwo x xs = P.F (ConsTwo' x xs)
 
 aBis1 :: FixOne
 aBis1 = NilOne
@@ -67,3 +70,22 @@ rBis2 = P.TreeRegex $ P.In (ConsOne' 2 (P.In NilTwo'))
 rBis3 :: P.TreeRegex Bis One
 rBis3 = P.TreeRegex $ P.In (ConsOne' 2 (P.In (ConsTwo' 'a' (P.In NilOne'))))
 
+rBis4 :: P.TreeRegex Bis One
+rBis4 = P.TreeRegex $ P.In NilOne' `P.Choice` P.In NilOne'
+
+
+instance Generic1k Bis where
+  type Rep1k Bis =    Tag1k U1k One
+                 :++: Tag1k (K1k () Int  :**: Par1k Two) One
+                 :++: Tag1k U1k Two
+                 :++: Tag1k (K1k () Char :**: Par1k One) Two
+
+  from1k NilOne' = L1k $ Tag1k U1k
+  from1k (ConsOne' x xs) = R1k $ L1k $ Tag1k (K1k x :**: Par1k xs)
+  from1k NilTwo' = R1k $ R1k $ L1k $ Tag1k U1k
+  from1k (ConsTwo' x xs) = R1k $ R1k $ R1k $ Tag1k (K1k x :**: Par1k xs)
+
+  to1k (L1k (Tag1k U1k)) = NilOne'
+  to1k (R1k (L1k (Tag1k (K1k x :**: Par1k xs)))) = ConsOne' x xs
+  to1k (R1k (R1k (L1k (Tag1k U1k)))) = NilTwo'
+  to1k (R1k (R1k (R1k (Tag1k (K1k x :**: Par1k xs))))) = ConsTwo' x xs
