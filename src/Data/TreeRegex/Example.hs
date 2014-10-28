@@ -13,7 +13,7 @@ import GHC.Generics
 import Data.GenericK
 
 data Tree' f = Leaf' | Branch' Int f f
-  deriving Generic1
+  deriving (Generic1, Show)
 type Tree = M.Fix Tree'
 
 -- Pattern synonyms for constructors
@@ -38,6 +38,22 @@ rTree2 = M.TreeRegex $ BranchR 4 M.Any M.Any
 
 rTree3 :: M.TreeRegex Tree'
 rTree3 = M.TreeRegex $ M.Iter (\k -> BranchR 2 (M.Square k) (M.Square k) `M.Choice` LeafR)
+
+-- Pattern synonyms for capturing regexes
+-- They do not work :(
+-- pattern LeafC = M.InC Leaf'
+-- pattern BranchC n l r = M.InC (Branch' n l r)
+
+rTreeC1 :: M.TreeRegexCapture Tree' [Tree' (M.Fix Tree')]
+rTreeC1 = M.TreeRegexCapture $ M.simpleIterC (\k -> M.InC (Branch' 2 (M.SquareC k) (M.SquareC k)) `M.ChoiceC` (M.InC Leaf'))
+
+showTree :: M.Fix Tree' -> String
+showTree (M.Fix Leaf') = "Leaf"
+showTree (M.Fix (Branch' n t1 t2)) = "(Branch " ++ show n ++ " " ++ showTree t1 ++ " " ++ showTree t2 ++ ")"
+
+showTree' :: Tree' (M.Fix Tree') -> String
+showTree' Leaf' = "Leaf"
+showTree' (Branch' n (M.Fix t1) (M.Fix t2)) = "(Branch " ++ show n ++ " " ++ showTree' t1 ++ " " ++ showTree' t2 ++ ")"
 
 data Ty = One | Two
 

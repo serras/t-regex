@@ -11,6 +11,8 @@ import Control.Applicative
 import GHC.Generics
 import Unsafe.Coerce -- :(
 
+import Debug.Trace
+
 newtype Fix f = Fix { unFix :: f (Fix f) } deriving Generic
 
 -- As defined in page 58 of "Tree Automata Techniques and Applications"
@@ -85,11 +87,16 @@ data TreeRegexCapture' k f r where
   -- Almost an Alternative: we have fmap, pure, <|> and sort of <*>
   ChoiceC :: TreeRegexCapture' k f a -> TreeRegexCapture' k f a -> TreeRegexCapture' k f a
   ConcatC :: (k -> TreeRegexCapture' k f ([a] -> b)) -> TreeRegexCapture' k f a -> TreeRegexCapture' k f b
-  IterC   :: (k -> TreeRegexCapture' k f ([a] -> a)) -> TreeRegexCapture' k f a
   MapC    :: (a -> b) -> TreeRegexCapture' k f a -> TreeRegexCapture' k f b
   PureC   :: r -> TreeRegexCapture' k f r
 
 newtype TreeRegexCapture f r = TreeRegexCapture { unTreeRegexCapture :: forall k. TreeRegexCapture' k f r }
+
+iterC :: (k -> TreeRegexCapture' k f ([a] -> a)) -> TreeRegexCapture' k f a
+iterC r = ConcatC r (iterC r)
+
+simpleIterC :: (k -> TreeRegexCapture' k f a) -> TreeRegexCapture' k f [a]
+simpleIterC r = iterC (\k -> MapC (\x xs -> x : concat xs) (r k))
 
 capture :: (Generic1 f, CaptureG' (Rep1 f))
         => TreeRegexCapture f r -> Fix f -> Maybe r
@@ -103,27 +110,26 @@ capture' :: (Generic1 f, CaptureG' (Rep1 f))
          -> Maybe (r, [(Integer, [forall s. s])])
 capture' EmptyC          _ _ _ = Nothing
 capture' AnyC            f _ _ = Just (f, [])
-capture' (InC r)   (Fix t) i s = applyFst to1 <$> captureG' (from1 r) (from1 t) i s
+capture' (InC r)   (Fix t) i s = applyFst to1 <$> trace "In" captureG' (from1 r) (from1 t) i s
 capture' (SquareC n)     t i s = let Just r = lookup n s in case capture' r t i s of
-                                   Nothing -> Nothing
-                                   Just (r, inner) -> Just (r, mix [(n,[unsafeCoerce r])] inner)
-capture' (ChoiceC r1 r2) t i s = case (capture' r1 t i s, capture' r1 t i s) of
+                                   Nothing -> trace "Not captured" Nothing
+                                   Just (r, inner) -> trace "Captured" $ Just (r, mix [(n,[unsafeCoerce r])] inner)
+capture' (ChoiceC r1 r2) t i s = case trace "Choice" (capture' r1 t i s, capture' r2 t i s) of
                                    (e1, Nothing) -> e1
                                    (Nothing, e2) -> e2
                                    (Just (e1,c1), Just (e2,c2)) -> Just (e1, mix c1 c2)
-capture' (ConcatC r1 r2) t i s = case capture' (r1 i) t (i+1) ((i,(unsafeCoerce r2)):s) of
+capture' (ConcatC r1 r2) t i s = case trace "Concat" $ capture' (r1 i) t (i+1) ((i,(unsafeCoerce r2)):s) of
                                    Nothing -> Nothing
                                    Just (f, inner) -> case lookup i inner of
                                      Nothing -> Just (f [], inner)
                                      Just ls -> Just (f (unsafeCoerce ls), inner)
-capture' (IterC r)       t i s = capture' (ConcatC r (IterC r)) t i s
 capture' (MapC f r)      t i s = applyFst f <$> capture' r t i s
 capture' (PureC r)       t i s = Just (r, [])
 
-mix :: Eq a => [(a,[b])] -> [(a,[b])] -> [(a,[b])]
+mix :: (Eq a, Show a) => [(a,[b])] -> [(a,[b])] -> [(a,[b])]
 mix lst1 lst2 = foldr mixElem lst1 lst2
   where mixElem (n,p) [] = []
-        mixElem (n,p) ((m,q):rest) | n == m    = (n, p ++ q) : rest
+        mixElem (n,p) ((m,q):rest) | n == m    = trace ("Mixing " ++ show n) $ (n, p ++ q) : rest
                                    | otherwise = (m,p) : mixElem (n,p) rest
 
 applyFst :: (a -> b) -> (a, c) -> (b, c)
