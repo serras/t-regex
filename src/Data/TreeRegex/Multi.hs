@@ -7,7 +7,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE GADTs #-}
-module Data.TreeRegex.Poly where
+module Data.TreeRegex.Multi where
 
 import Data.GenericK
 
@@ -17,30 +17,17 @@ import Unsafe.Coerce -- :(
 -- * f -> set of constructors
 -- * s -> set of iteration and concatenation positions
 -- * ix -> index over the data types
-data TreeRegex'' s (ix :: k) (f :: k -> (k -> *) -> *)
-  = Empty'
-  | Any'
-  | In' (f ix (TreeRegex' s f))
-  | Square' s
-  | Choice' (TreeRegex' s f ix) (TreeRegex' s f ix)
-  | Concat' (s -> TreeRegex' s f ix) (TreeRegex' s f ix)
-  | Iter' (s -> TreeRegex' s f ix)
-data TreeRegex' s f ix = TR { unTreeRegex' :: TreeRegex'' s ix f }
+data TreeRegex' s (f :: (k -> *) -> k -> *) (ix :: k)
+  = Empty
+  | Any
+  | In (f (TreeRegex' s f) ix)
+  | Square s
+  | Choice (TreeRegex' s f ix) (TreeRegex' s f ix)
+  | Concat (s -> TreeRegex' s f ix) (TreeRegex' s f ix)
+  | Iter (s -> TreeRegex' s f ix)
 newtype TreeRegex f ix = TreeRegex { unTreeRegex :: forall s. TreeRegex' s f ix }
 
-pattern Empty = TR Empty'
-pattern Any = TR Any'
-pattern In x = TR (In' x)
-pattern Square s = TR (Square' s)
-pattern Choice x y = TR (Choice' x y)
-pattern Concat x y = TR (Concat' x y)
-pattern Iter x = TR (Iter' x)
-
-newtype Fix' (ix :: k) (f :: k -> (k -> *) -> *) = Fix' { unFix' :: f ix (Fix f) }
-newtype Fix  (f :: k -> (k -> *) -> *) (ix :: k) = Fix  { unFix  :: Fix' ix f }
-
-pattern F x = Fix (Fix' x)
-
+newtype Fix (f :: (k -> *) -> k -> *) (ix :: k) = Fix { unFix :: f (Fix f) ix }
 
 match :: (Generic1k f, MatchG' (Rep1k f))
       => TreeRegex f ix -> Fix f ix -> Bool
@@ -54,15 +41,15 @@ match' :: (Generic1k f, MatchG' (Rep1k f))
        -> Bool
 match' Empty          _ _ _ = False
 match' Any            _ _ _ = True
-match' (In r)     (F t) i s = matchG' (from1k r) (from1k t) i s
+match' (In r)   (Fix t) i s = matchG' (from1k r) (from1k t) i s
 match' (Square n)     t i s = let Just r = unsafeCoerce (lookup n s) in match' r t i s
 match' (Choice r1 r2) t i s = match' r1 t i s || match' r2 t i s
 match' (Concat r1 r2) t i s = match' (r1 i) t (i+1) ((i, unsafeCoerce r2):s)
 match' (Iter r)       t i s = match' (Concat r (Iter r)) t i s
 
-class MatchG' (f :: k -> (k -> *) -> *) where
+class MatchG' (f :: (k -> *) -> k -> *) where
   matchG' :: (Generic1k g, MatchG' (Rep1k g))
-          => f ix (TreeRegex' Integer g) -> f ix (Fix g)
+          => f (TreeRegex' Integer g) ix -> f (Fix g) ix
           -> Integer -> [(Integer, forall h xi. TreeRegex' Integer h xi)] -> Bool
 
 

@@ -7,8 +7,8 @@
 {-# LANGUAGE TypeFamilies #-}
 module Data.TreeRegex.Example where
 
-import qualified Data.TreeRegex.Mono as M
-import qualified Data.TreeRegex.Poly as P
+import qualified Data.TreeRegex.Mono  as M
+import qualified Data.TreeRegex.Multi as P
 import GHC.Generics
 import Data.GenericK
 
@@ -41,19 +41,19 @@ rTree3 = M.TreeRegex $ M.Iter (\k -> BranchR 2 (M.Square k) (M.Square k) `M.Choi
 
 data Ty = One | Two
 
-data Bis ix f where
-  NilOne'  :: Bis One f
-  ConsOne' :: Int -> f Two -> Bis One f
-  NilTwo'  :: Bis Two f
-  ConsTwo' :: Char -> f One -> Bis Two f
+data Bis f ix where
+  NilOne'  :: Bis f One
+  ConsOne' :: Int  -> f Two -> Bis f One
+  NilTwo'  :: Bis f Two
+  ConsTwo' :: Char -> f One -> Bis f Two
 
 type FixOne = P.Fix Bis One
 type FixTwo = P.Fix Bis Two
 
-pattern NilOne       = P.F NilOne'
-pattern ConsOne x xs = P.F (ConsOne' x xs)
-pattern NilTwo       = P.F NilTwo'
-pattern ConsTwo x xs = P.F (ConsTwo' x xs)
+pattern NilOne       = P.Fix NilOne'
+pattern ConsOne x xs = P.Fix (ConsOne' x xs)
+pattern NilTwo       = P.Fix NilTwo'
+pattern ConsTwo x xs = P.Fix (ConsTwo' x xs)
 
 aBis1 :: FixOne
 aBis1 = NilOne
@@ -72,7 +72,6 @@ rBis3 = P.TreeRegex $ P.In (ConsOne' 2 (P.In (ConsTwo' 'a' (P.In NilOne'))))
 
 rBis4 :: P.TreeRegex Bis One
 rBis4 = P.TreeRegex $ P.In NilOne' `P.Choice` P.In NilOne'
-
 
 instance Generic1k Bis where
   type Rep1k Bis =    Tag1k U1k One

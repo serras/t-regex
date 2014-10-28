@@ -11,7 +11,7 @@ cabal-version:       >=1.10
 library
   exposed-modules:     Data.GenericK,
                        Data.TreeRegex.Mono,
-                       Data.TreeRegex.Poly,
+                       Data.TreeRegex.Multi,
                        Data.TreeRegex.Example
   -- other-modules:       
   -- other-extensions:    
