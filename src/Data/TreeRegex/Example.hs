@@ -1,5 +1,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE PatternSynonyms #-}
@@ -9,11 +10,12 @@ module Data.TreeRegex.Example where
 
 import qualified Data.TreeRegex.Mono  as M
 import qualified Data.TreeRegex.Multi as P
+import Data.Typeable
 import GHC.Generics
 import Data.GenericK
 
 data Tree' f = Leaf' | Branch' Int f f
-  deriving (Generic1, Show)
+  deriving (Generic1, Show, Typeable)
 type Tree = M.Fix Tree'
 
 -- Pattern synonyms for constructors
@@ -25,6 +27,9 @@ aTree1 = Branch 2 (Branch 3 Leaf Leaf) Leaf
 
 aTree2 :: Tree
 aTree2 = Branch 2 (Branch 2 Leaf Leaf) Leaf
+
+aTree3 :: Tree
+aTree3 = Branch 2 Leaf Leaf
 
 -- Pattern synonyms for regexes
 pattern LeafR = M.In Leaf'
@@ -44,8 +49,8 @@ rTree3 = M.TreeRegex $ M.Iter (\k -> BranchR 2 (M.Square k) (M.Square k) `M.Choi
 -- pattern LeafC = M.InC Leaf'
 -- pattern BranchC n l r = M.InC (Branch' n l r)
 
-rTreeC1 :: M.TreeRegexCapture Tree' [Tree' (M.Fix Tree')]
-rTreeC1 = M.TreeRegexCapture $ M.simpleIterC (\k -> M.InC (Branch' 2 (M.SquareC k) (M.SquareC k)) `M.ChoiceC` (M.InC Leaf'))
+rTreeC1 :: M.TreeRegexCapture Tree' [Tree]
+rTreeC1 = M.TreeRegexCapture $ M.collectWithFixC (\k -> M.InC (Branch' 2 (M.SquareC k) (M.SquareC k)) `M.ChoiceC` (M.InC Leaf'))
 
 showTree :: M.Fix Tree' -> String
 showTree (M.Fix Leaf') = "Leaf"

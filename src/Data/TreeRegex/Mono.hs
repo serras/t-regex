@@ -5,6 +5,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImpredicativeTypes #-}
+{-# LANGUAGE PolyKinds #-}
 module Data.TreeRegex.Mono where
 
 import Control.Applicative
@@ -79,66 +80,79 @@ instance (MatchG' a, MatchG' b) => MatchG' (a :*: b) where
 
 data Void
 
-data TreeRegexCapture' k f r where
+data TreeRegexCapture' (k :: * -> *) f r where
   EmptyC  :: TreeRegexCapture' k f Void
   AnyC    :: TreeRegexCapture' k f (Fix f)
-  InC     :: (f (TreeRegexCapture' k f r)) -> TreeRegexCapture' k f (f r)
-  SquareC :: k -> TreeRegexCapture' k f (Fix f)
+  InC     :: f (TreeRegexCapture' k f r) -> TreeRegexCapture' k f (f r)
+  SquareC :: k r -> TreeRegexCapture' k f r
   -- Almost an Alternative: we have fmap, pure, <|> and sort of <*>
   ChoiceC :: TreeRegexCapture' k f a -> TreeRegexCapture' k f a -> TreeRegexCapture' k f a
-  ConcatC :: (k -> TreeRegexCapture' k f ([a] -> b)) -> TreeRegexCapture' k f a -> TreeRegexCapture' k f b
+  ConcatC :: (k a -> TreeRegexCapture' k f ([a] -> b)) -> TreeRegexCapture' k f a -> TreeRegexCapture' k f b
   MapC    :: (a -> b) -> TreeRegexCapture' k f a -> TreeRegexCapture' k f b
   PureC   :: r -> TreeRegexCapture' k f r
 
 newtype TreeRegexCapture f r = TreeRegexCapture { unTreeRegexCapture :: forall k. TreeRegexCapture' k f r }
 
-iterC :: (k -> TreeRegexCapture' k f ([a] -> a)) -> TreeRegexCapture' k f a
+iterC :: (k a -> TreeRegexCapture' k f ([a] -> a)) -> TreeRegexCapture' k f a
 iterC r = ConcatC r (iterC r)
 
-simpleIterC :: (k -> TreeRegexCapture' k f a) -> TreeRegexCapture' k f [a]
-simpleIterC r = iterC (\k -> MapC (\x xs -> x : concat xs) (r k))
+collectC :: (k a -> TreeRegexCapture' k f a) -> TreeRegexCapture' k f [a]
+collectC r = MapC snd $ collectC' r
+  where collectC' :: (k a -> TreeRegexCapture' k f a) -> TreeRegexCapture' k f (a,[a])
+        collectC' rx = ConcatC (\k -> MapC (\x xs -> (x,x:xs)) (rx k)) (MapC fst $ collectC' rx)
+
+collectWithFixC :: (k (Fix f) -> TreeRegexCapture' k f (f (Fix f))) -> TreeRegexCapture' k f [Fix f]
+collectWithFixC r = MapC snd $ collectWithFixC' r
+  where collectWithFixC' :: (k (Fix f) -> TreeRegexCapture' k f (f (Fix f))) -> TreeRegexCapture' k f (Fix f, [Fix f])
+        collectWithFixC' rx = ConcatC (\k -> MapC (\x xs -> (Fix x, (Fix x):xs)) (rx k)) (MapC fst $ collectWithFixC' rx)
 
 capture :: (Generic1 f, CaptureG' (Rep1 f))
         => TreeRegexCapture f r -> Fix f -> Maybe r
 capture r t = fst <$> capture' (unTreeRegexCapture r) t 0 []
 
+data WrappedInt a = W {unW :: Integer } deriving (Eq, Show)
+
 capture' :: (Generic1 f, CaptureG' (Rep1 f))
-         => TreeRegexCapture' Integer f r
+         => TreeRegexCapture' WrappedInt f r
          -> Fix f
          -> Integer  -- Fresh variable generator
-         -> [(Integer, forall s. TreeRegexCapture' Integer f s)]  -- Ongoing substitution
+         -> [(Integer, forall s. TreeRegexCapture' WrappedInt f s)]  -- Ongoing substitution
          -> Maybe (r, [(Integer, [forall s. s])])
 capture' EmptyC          _ _ _ = Nothing
 capture' AnyC            f _ _ = Just (f, [])
 capture' (InC r)   (Fix t) i s = applyFst to1 <$> trace "In" captureG' (from1 r) (from1 t) i s
-capture' (SquareC n)     t i s = let Just r = lookup n s in case capture' r t i s of
+capture' (SquareC (W n)) t i s = let Just r = lookup n s in case capture' r t i s of
                                    Nothing -> trace "Not captured" Nothing
-                                   Just (r, inner) -> trace "Captured" $ Just (r, mix [(n,[unsafeCoerce r])] inner)
+                                   Just (e, inner) -> trace "Captured" $ Just (e, mix [(n, [trace "toDyn" unsafeCoerce e])] inner)
 capture' (ChoiceC r1 r2) t i s = case trace "Choice" (capture' r1 t i s, capture' r2 t i s) of
-                                   (e1, Nothing) -> e1
+                                   (Just e1, _)  -> Just e1
                                    (Nothing, e2) -> e2
-                                   (Just (e1,c1), Just (e2,c2)) -> Just (e1, mix c1 c2)
-capture' (ConcatC r1 r2) t i s = case trace "Concat" $ capture' (r1 i) t (i+1) ((i,(unsafeCoerce r2)):s) of
+capture' (ConcatC r1 r2) t i s = case trace ("Concat " ++ show i) $ capture' (r1 (W i)) t (i+1) ((i,unsafeCoerce r2):s) of
                                    Nothing -> Nothing
                                    Just (f, inner) -> case lookup i inner of
-                                     Nothing -> Just (f [], inner)
-                                     Just ls -> Just (f (unsafeCoerce ls), inner)
+                                     Nothing -> Just (f [], remove i inner)
+                                     Just ls -> Just (f (unsafeCoerce ls), remove i inner)
 capture' (MapC f r)      t i s = applyFst f <$> capture' r t i s
-capture' (PureC r)       t i s = Just (r, [])
+capture' (PureC r)       _ _ _ = Just (r, [])
 
 mix :: (Eq a, Show a) => [(a,[b])] -> [(a,[b])] -> [(a,[b])]
 mix lst1 lst2 = foldr mixElem lst1 lst2
-  where mixElem (n,p) [] = []
+  where mixElem _     [] = []
         mixElem (n,p) ((m,q):rest) | n == m    = trace ("Mixing " ++ show n) $ (n, p ++ q) : rest
                                    | otherwise = (m,p) : mixElem (n,p) rest
+
+remove :: Eq a => a -> [(a,b)] -> [(a,b)]
+remove _ [] = []
+remove e ((x,y):xs) | e == x    = xs
+                    | otherwise = (x,y):remove e xs
 
 applyFst :: (a -> b) -> (a, c) -> (b, c)
 applyFst f (x, y) = (f x, y)
 
 class CaptureG' f where
   captureG' :: (Generic1 g, CaptureG' (Rep1 g))
-            => f (TreeRegexCapture' Integer g r) -> f (Fix g)
-            -> Integer -> [(Integer, forall r. TreeRegexCapture' Integer g r)]
+            => f (TreeRegexCapture' WrappedInt g r) -> f (Fix g)
+            -> Integer -> [(Integer, forall s. TreeRegexCapture' WrappedInt g s)]
             -> Maybe (f r, [(Integer, [forall s. s])])
 
 instance CaptureG' U1 where
@@ -166,4 +180,3 @@ instance (CaptureG' a, CaptureG' b) => CaptureG' (a :*: b) where
   captureG' (r1 :*: r2) (t1 :*: t2) i s = case (captureG' r1 t1 i s, captureG' r2 t2 i s) of
                                             (Just (e1,c1), Just (e2,c2)) -> Just (e1 :*: e2, mix c1 c2)
                                             _                            -> Nothing
-
