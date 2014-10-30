@@ -12,10 +12,13 @@ library
   exposed-modules:     Data.GenericK,
                        Data.TreeRegex.Mono,
                        Data.TreeRegex.Multi,
-                       Data.TreeRegex.Example
+                       Data.TreeRegex.Example,
+                       Data.Regex.Generic
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >= 4.7
+  build-depends:       base >= 4.7,
+                       containers,
+                       recursion-schemes >= 4 && < 5
   hs-source-dirs:      src
   default-language:    Haskell2010
   ghc-options:         -Wall

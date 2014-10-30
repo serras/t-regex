@@ -6,6 +6,8 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Data.TreeRegex.Example where
 
 import qualified Data.TreeRegex.Mono  as M
@@ -17,6 +19,10 @@ import Data.GenericK
 data Tree' f = Leaf' | Branch' Int f f
   deriving (Generic1, Show, Typeable)
 type Tree = M.Fix Tree'
+
+instance Show Tree where
+  show (M.Fix Leaf') = "Leaf"
+  show (M.Fix (Branch' n t1 t2)) = "(Branch " ++ show n ++ " " ++ show t1 ++ " " ++ show t2 ++ ")"
 
 -- Pattern synonyms for constructors
 pattern Leaf = M.Fix Leaf'
@@ -52,9 +58,12 @@ rTree3 = M.TreeRegex $ M.Iter (\k -> BranchR 2 (M.Square k) (M.Square k) `M.Choi
 rTreeC1 :: M.TreeRegexCapture Tree' [Tree]
 rTreeC1 = M.TreeRegexCapture $ M.fixListC (\k -> M.InC (Branch' 2 (M.SquareC k) (M.SquareC k)) `M.ChoiceC` (M.InC Leaf'))
 
-showTree :: M.Fix Tree' -> String
-showTree (M.Fix Leaf') = "Leaf"
-showTree (M.Fix (Branch' n t1 t2)) = "(Branch " ++ show n ++ " " ++ showTree t1 ++ " " ++ showTree t2 ++ ")"
+rTreeN1 :: M.TreeRegexNew String Tree'
+rTreeN1 = M.TreeRegexNew $
+            M.iterN $ \k ->
+              M.CaptureN "x" $
+                M.InN (Branch' 2 (M.SquareN k) (M.SquareN k))
+                `M.ChoiceN` (M.InN Leaf')
 
 data Ty = One | Two
 
