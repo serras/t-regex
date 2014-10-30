@@ -9,16 +9,18 @@ extra-source-files:  README.md
 cabal-version:       >=1.10
 
 library
-  exposed-modules:     Data.GenericK,
-                       Data.TreeRegex.Mono,
-                       Data.TreeRegex.Multi,
-                       Data.TreeRegex.Example,
-                       Data.Regex.Generic
+  exposed-modules:   Data.MultiGenerics,
+                     Data.Regex.Generics,
+                     Data.Regex.MultiGenerics,
+                     Data.Regex.Example,
+                     Data.TreeRegex.Mono,
+                     Data.TreeRegex.Multi,
+                     Data.TreeRegex.Example
   -- other-modules:       
   -- other-extensions:    
-  build-depends:       base >= 4.7,
-                       containers,
-                       recursion-schemes >= 4 && < 5
-  hs-source-dirs:      src
-  default-language:    Haskell2010
-  ghc-options:         -Wall
+  build-depends:     base >= 4.7,
+                     containers,
+                     recursion-schemes >= 4 && < 5
+  hs-source-dirs:    src
+  default-language:  Haskell2010
+  ghc-options:       -Wall

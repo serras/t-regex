@@ -1,7 +1,8 @@
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
-module Data.Regex.Generic (
+{-# LANGUAGE ScopedTypeVariables #-}
+module Data.Regex.Generics (
   Regex(Regex),
   empty_, none,
   any_,
@@ -11,7 +12,7 @@ module Data.Regex.Generic (
   concat_, (<--),
   iter,
   capture,
-  match,
+  matches, match,
   Fix(..)
 ) where
 
@@ -20,6 +21,7 @@ import Control.Monad (guard)
 import Data.Functor.Foldable
 import Data.Map (Map)
 import qualified Data.Map as M
+import Data.Maybe (isJust)
 import GHC.Generics
 
 data Regex' k c f
@@ -67,6 +69,10 @@ iter r = Concat r (iter r)
 
 capture :: c -> Regex' k c f -> Regex' k c f
 capture = Capture
+
+matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
+        => Regex c f -> Fix f -> Bool
+r `matches` t = isJust $ (match r t :: Maybe (Map c [Fix f]))
 
 match :: (Ord c, Generic1 f, MatchG (Rep1 f), Alternative m)
       => Regex c f -> Fix f -> Maybe (Map c (m (Fix f)))

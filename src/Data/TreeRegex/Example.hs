@@ -14,7 +14,7 @@ import qualified Data.TreeRegex.Mono  as M
 import qualified Data.TreeRegex.Multi as P
 import Data.Typeable
 import GHC.Generics
-import Data.GenericK
+import Data.MultiGenerics
 
 data Tree' f = Leaf' | Branch' Int f f
   deriving (Generic1, Show, Typeable)
@@ -99,18 +99,18 @@ rBis3 = P.TreeRegex $ P.In (ConsOne' 2 (P.In (ConsTwo' 'a' (P.In NilOne'))))
 rBis4 :: P.TreeRegex Bis One
 rBis4 = P.TreeRegex $ P.In NilOne' `P.Choice` P.In NilOne'
 
-instance Generic1k Bis where
-  type Rep1k Bis =    Tag1k U1k One
-                 :++: Tag1k (K1k () Int  :**: Par1k Two) One
-                 :++: Tag1k U1k Two
-                 :++: Tag1k (K1k () Char :**: Par1k One) Two
+instance Generic1m Bis where
+  type Rep1m Bis =    Tag1m U1m One
+                 :++: Tag1m (K1m () Int  :**: Par1m Two) One
+                 :++: Tag1m U1m Two
+                 :++: Tag1m (K1m () Char :**: Par1m One) Two
 
-  from1k NilOne' = L1k $ Tag1k U1k
-  from1k (ConsOne' x xs) = R1k $ L1k $ Tag1k (K1k x :**: Par1k xs)
-  from1k NilTwo' = R1k $ R1k $ L1k $ Tag1k U1k
-  from1k (ConsTwo' x xs) = R1k $ R1k $ R1k $ Tag1k (K1k x :**: Par1k xs)
+  from1k NilOne' = L1m $ Tag1m U1m
+  from1k (ConsOne' x xs) = R1m $ L1m $ Tag1m (K1m x :**: Par1m xs)
+  from1k NilTwo' = R1m $ R1m $ L1m $ Tag1m U1m
+  from1k (ConsTwo' x xs) = R1m $ R1m $ R1m $ Tag1m (K1m x :**: Par1m xs)
 
-  to1k (L1k (Tag1k U1k)) = NilOne'
-  to1k (R1k (L1k (Tag1k (K1k x :**: Par1k xs)))) = ConsOne' x xs
-  to1k (R1k (R1k (L1k (Tag1k U1k)))) = NilTwo'
-  to1k (R1k (R1k (R1k (Tag1k (K1k x :**: Par1k xs))))) = ConsTwo' x xs
+  to1k (L1m (Tag1m U1m)) = NilOne'
+  to1k (R1m (L1m (Tag1m (K1m x :**: Par1m xs)))) = ConsOne' x xs
+  to1k (R1m (R1m (L1m (Tag1m U1m)))) = NilTwo'
+  to1k (R1m (R1m (R1m (Tag1m (K1m x :**: Par1m xs))))) = ConsTwo' x xs
