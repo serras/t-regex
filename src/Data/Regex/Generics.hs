@@ -86,6 +86,7 @@ infixl 4 <<-
 (<<-) :: c -> Regex' k c f -> Regex' k c f
 (<<-) = capture
 
+
 matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
         => Regex c f -> Fix f -> Bool
 r `matches` t = isJust $ (match r t :: Maybe (Map c [Fix f]))
@@ -175,3 +176,4 @@ instance (Generic1 f, MatchG (Rep1 f))
   with r t = (\m -> (M.findWithDefault [] 1 m, M.findWithDefault [] 2 m, M.findWithDefault [] 3 m,
                      M.findWithDefault [] 4 m, M.findWithDefault [] 5 m))
              <$> match (r 1 2 3 4 5) t
+

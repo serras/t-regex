@@ -5,9 +5,11 @@
 {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE PostfixOperators #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Data.Regex.Example where
 
 import Data.Regex.Generics
+import Data.Regex.TH
 import GHC.Generics
 
 data Tree' f = Leaf' | Branch' Int f f
@@ -58,3 +60,11 @@ eWith1 _                       = error "What?"
 eWith2 :: Tree -> [Tree]
 eWith2 (with rTree3 -> Just (_,e)) = e
 eWith2 _                           = error "What?"
+
+eWith2Bis :: Tree -> [Tree]
+eWith2Bis $(r [|\x e -> iter $ \k -> x <<- inj (Branch' 2 (k!) (k!)) <||> e <<- (inj Leaf') |]) = e
+eWith2Bis _  = error "What?"
+
+eWith3 :: Tree -> [Tree]
+eWith3 $(r [| \x y -> x <<- inj Leaf' |]) = _
+eWith3 _                                  = error "What?"
