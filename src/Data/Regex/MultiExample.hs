@@ -3,6 +3,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Data.Regex.MultiExample where
 
 import Data.Regex.MultiGenerics
@@ -26,6 +27,12 @@ data Bis f ix where
 type FixOne = Fix Bis One
 type FixTwo = Fix Bis Two
 
+instance ShowM (Fix Bis) where
+  showM (Fix NilOne')        = "NilOne"
+  showM (Fix (ConsOne' n r)) = "(ConsOne " ++ show n ++ " " ++ showM r ++ ")"
+  showM (Fix NilTwo')        = "NilTwo"
+  showM (Fix (ConsTwo' c r)) = "(ConsTwo " ++ show c ++ " " ++ showM r ++ ")"
+
 pattern NilOne       = Fix NilOne'
 pattern ConsOne x xs = Fix (ConsOne' x xs)
 pattern NilTwo       = Fix NilTwo'
@@ -37,8 +44,8 @@ aBis1 = NilOne
 aBis2 :: FixOne
 aBis2 = ConsOne 1 (ConsTwo 'a' NilOne)
 
-rBis1 :: Regex c Bis One
-rBis1 = Regex $ inj NilOne'
+rBis1 :: Regex Char Bis One
+rBis1 = Regex $ capture 'a' $ inj NilOne'
 
 rBis2 :: Regex c Bis One
 rBis2 = Regex $ inj (ConsOne' 2 (inj NilTwo'))

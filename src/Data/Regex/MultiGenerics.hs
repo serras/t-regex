@@ -4,6 +4,7 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE UndecidableInstances #-}
 module Data.Regex.MultiGenerics (
   Regex(Regex),
   empty_, none,
@@ -16,6 +17,7 @@ module Data.Regex.MultiGenerics (
   capture,
   matches,
   match,
+  Result(..),
   Fix(..)
 ) where
 
@@ -84,6 +86,9 @@ r `matches` t = matches' (unRegex r) t 0 []
 
 data Result f where
   Result :: Sing ix -> Fix f ix -> Result f
+
+instance ShowM (Fix f) => Show (Result f) where
+  show (Result _ e) = showM e
 
 match :: (Ord c, Generic1m f, MatchG (Rep1m f), Alternative m, SingI ix)
       => Regex c f ix -> Fix f ix -> Maybe (Map c (m (Result f)))

@@ -19,6 +19,9 @@ class SingI (a :: k) where
   -- extension to use this method the way you want.
   sing :: Sing a
 
+class ShowM (f :: k -> *) where
+  showM :: f ix -> String
+
 -- | Representable types of kind * -> *.
 -- This class is derivable in GHC with the DeriveGeneric flag on.
 class Generic1m (f :: (k -> *) -> k -> *) where
