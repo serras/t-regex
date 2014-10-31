@@ -7,14 +7,15 @@
 {-# LANGUAGE FlexibleInstances #-}
 module Data.Regex.Generics (
   Regex(Regex),
+  Regex'(Inject),
   empty_, none,
   any_,
   inj,
-  square, var,
+  square, var, (!),
   choice, (<||>),
-  concat_, (<--),
-  iter,
-  capture, (<@>),
+  concat_, (<.>),
+  iter, (^*),
+  capture, (<<-),
   matches, match,
   Fix(..),
   with
@@ -56,6 +57,9 @@ square = Square
 var :: k -> Regex' k c f
 var = square
 
+(!) :: k -> Regex' k c f
+(!) = square
+
 choice :: Regex' k c f -> Regex' k c f -> Regex' k c f
 choice = Choice
 
@@ -66,18 +70,21 @@ infixl 3 <||>
 concat_ :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
 concat_ = Concat
 
-(<--) :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
-(<--) = concat_
+(<.>) :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
+(<.>) = concat_
 
 iter :: (k -> Regex' k c f) -> Regex' k c f
 iter r = Concat r (iter r)
 
+(^*) :: (k -> Regex' k c f) -> Regex' k c f
+(^*) = iter
+
 capture :: c -> Regex' k c f -> Regex' k c f
 capture = Capture
 
-infixl 4 <@>
-(<@>) :: c -> Regex' k c f -> Regex' k c f
-(<@>) = capture
+infixl 4 <<-
+(<<-) :: c -> Regex' k c f -> Regex' k c f
+(<<-) = capture
 
 matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
         => Regex c f -> Fix f -> Bool

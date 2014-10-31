@@ -4,6 +4,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverlappingInstances #-}
 {-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE PostfixOperators #-}
 module Data.Regex.Example where
 
 import Data.Regex.Generics
@@ -44,8 +45,11 @@ rTree2 c = Regex $
                       inj (Branch' 2 (square k) (square k))
                  <||> inj Leaf'
 
+pattern Branch_ n l r = Inject (Branch' n l r)
+pattern Leaf_         = Inject Leaf'
+
 rTree3 :: Integer -> Integer -> Regex Integer Tree'
-rTree3 c1 c2 = Regex $ iter $ \k -> c1 <@> inj (Branch' 2 (square k) (square k)) <||> c2 <@> inj Leaf'
+rTree3 c1 c2 = Regex ( (\k -> c1 <<- Branch_ 2 (k!) (k!) <||> c2 <<- Leaf_)^* )
 
 eWith1 :: Tree -> [Tree]
 eWith1 (with rTree2 -> Just e) = e
