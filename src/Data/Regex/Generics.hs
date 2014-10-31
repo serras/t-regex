@@ -2,6 +2,9 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Data.Regex.Generics (
   Regex(Regex),
   empty_, none,
@@ -11,9 +14,10 @@ module Data.Regex.Generics (
   choice, (<||>),
   concat_, (<--),
   iter,
-  capture,
+  capture, (<@>),
   matches, match,
-  Fix(..)
+  Fix(..),
+  with
 ) where
 
 import Control.Applicative
@@ -55,6 +59,7 @@ var = square
 choice :: Regex' k c f -> Regex' k c f -> Regex' k c f
 choice = Choice
 
+infixl 3 <||>
 (<||>) :: Regex' k c f -> Regex' k c f -> Regex' k c f
 (<||>) = choice
 
@@ -69,6 +74,10 @@ iter r = Concat r (iter r)
 
 capture :: c -> Regex' k c f -> Regex' k c f
 capture = Capture
+
+infixl 4 <@>
+(<@>) :: c -> Regex' k c f -> Regex' k c f
+(<@>) = capture
 
 matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
         => Regex c f -> Fix f -> Bool
@@ -121,3 +130,41 @@ instance (MatchG a, MatchG b) => MatchG (a :+: b) where
 
 instance (MatchG a, MatchG b) => MatchG (a :*: b) where
   matchG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> matchG r1 t1 i s <*> matchG r2 t2 i s
+
+
+class With f fn r | fn -> r where
+  with :: fn -> Fix f -> Maybe r
+
+instance (Generic1 f, MatchG (Rep1 f), Ord c)
+         => With f (Regex c f) () where
+  with r t = (const ()) <$> (match r t :: Maybe (Map c [Fix f]))
+  
+instance (Generic1 f, MatchG (Rep1 f))
+         => With f (Integer -> Regex Integer f) [Fix f] where
+  with r t = M.findWithDefault [] 1 <$> match (r 1) t
+
+instance (Generic1 f, MatchG (Rep1 f))
+         => With f (Integer -> Integer -> Regex Integer f)
+                   ([Fix f], [Fix f]) where
+  with r t = (\m -> (M.findWithDefault [] 1 m, M.findWithDefault [] 2 m))
+             <$> match (r 1 2) t
+
+instance (Generic1 f, MatchG (Rep1 f))
+         => With f (Integer -> Integer -> Integer -> Regex Integer f)
+                   ([Fix f],[Fix f],[Fix f]) where
+  with r t = (\m -> (M.findWithDefault [] 1 m, M.findWithDefault [] 2 m, M.findWithDefault [] 3 m))
+             <$> match (r 1 2 3) t
+
+instance (Generic1 f, MatchG (Rep1 f))
+         => With f (Integer -> Integer -> Integer -> Integer -> Regex Integer f)
+                   ([Fix f],[Fix f],[Fix f],[Fix f]) where
+  with r t = (\m -> (M.findWithDefault [] 1 m, M.findWithDefault [] 2 m,
+                     M.findWithDefault [] 3 m, M.findWithDefault [] 4 m))
+             <$> match (r 1 2 3 4) t
+
+instance (Generic1 f, MatchG (Rep1 f))
+         => With f (Integer -> Integer -> Integer -> Integer -> Integer -> Regex Integer f)
+                   ([Fix f],[Fix f],[Fix f],[Fix f],[Fix f]) where
+  with r t = (\m -> (M.findWithDefault [] 1 m, M.findWithDefault [] 2 m, M.findWithDefault [] 3 m,
+                     M.findWithDefault [] 4 m, M.findWithDefault [] 5 m))
+             <$> match (r 1 2 3 4 5) t

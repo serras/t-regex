@@ -3,6 +3,7 @@
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverlappingInstances #-}
+{-# LANGUAGE ViewPatterns #-}
 module Data.Regex.Example where
 
 import Data.Regex.Generics
@@ -35,3 +36,21 @@ rTree1 = Regex $
              capture "x" $
                     inj (Branch' 2 (square k) (square k))
                <||> inj Leaf'
+
+rTree2 :: Integer -> Regex Integer Tree'
+rTree2 c = Regex $
+             iter $ \k ->
+               capture c $
+                      inj (Branch' 2 (square k) (square k))
+                 <||> inj Leaf'
+
+rTree3 :: Integer -> Integer -> Regex Integer Tree'
+rTree3 c1 c2 = Regex $ iter $ \k -> c1 <@> inj (Branch' 2 (square k) (square k)) <||> c2 <@> inj Leaf'
+
+eWith1 :: Tree -> [Tree]
+eWith1 (with rTree2 -> Just e) = e
+eWith1 _                       = error "What?"
+
+eWith2 :: Tree -> [Tree]
+eWith2 (with rTree3 -> Just (_,e)) = e
+eWith2 _                           = error "What?"
