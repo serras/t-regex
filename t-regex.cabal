@@ -13,9 +13,7 @@ library
                      Data.Regex.Generics,
                      Data.Regex.MultiGenerics,
                      Data.Regex.Example,
-                     Data.TreeRegex.Mono,
-                     Data.TreeRegex.Multi,
-                     Data.TreeRegex.Example
+                     Data.Regex.MultiExample
   -- other-modules:       
   -- other-extensions:    
   build-depends:     base >= 4.7,

@@ -8,6 +8,17 @@ module Data.MultiGenerics where
 
 newtype Fix (f :: (k -> *) -> k -> *) (ix :: k) = Fix { unFix :: f (Fix f) ix }
 
+-- | The singleton kind-indexed data family.
+data family Sing (a :: k)
+
+-- | A 'SingI' constraint is essentially an implicitly-passed singleton.
+-- If you need to satisfy this constraint with an explicit singleton, please
+-- see 'withSingI'.
+class SingI (a :: k) where
+  -- | Produce the singleton explicitly. You will likely need the @ScopedTypeVariables@
+  -- extension to use this method the way you want.
+  sing :: Sing a
+
 -- | Representable types of kind * -> *.
 -- This class is derivable in GHC with the DeriveGeneric flag on.
 class Generic1m (f :: (k -> *) -> k -> *) where
