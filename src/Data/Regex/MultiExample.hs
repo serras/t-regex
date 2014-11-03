@@ -4,14 +4,22 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE PostfixOperators #-}
+{-# LANGUAGE ViewPatterns #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Data.Regex.MultiExample where
 
 import Data.Regex.MultiGenerics
 import Data.MultiGenerics
+import Data.Regex.TH
 
 data Ty = One | Two
-data instance Sing One = SOne
-data instance Sing Two = STwo
+data instance Sing (a :: Ty) where
+  SOne :: Sing One
+  STwo :: Sing Two
+deriving instance Eq (Sing (a :: Ty))
 
 instance SingI One where
   sing = SOne
@@ -71,3 +79,13 @@ instance Generic1m Bis where
   to1k (R1m (L1m (Tag1m (K1m x :**: Par1m xs)))) = ConsOne' x xs
   to1k (R1m (R1m (L1m (Tag1m U1m)))) = NilTwo'
   to1k (R1m (R1m (R1m (Tag1m (K1m x :**: Par1m xs))))) = ConsTwo' x xs
+
+cBis1 :: Return One -> Regex Integer Bis One
+cBis1 x = Regex $ (x ?? (sing :: Sing One)) <<- inj NilOne'
+
+eBis1 :: FixOne -> [FixOne]
+eBis1 (with cBis1 -> Just x) = x
+eBis1 _                      = error "What?"
+
+eBis2 :: FixOne -> [FixOne]
+eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x

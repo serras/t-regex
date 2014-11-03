@@ -5,24 +5,31 @@
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE MonadComprehensions #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Data.Regex.MultiGenerics (
   Regex(Regex),
   empty_, none,
   any_,
   inj,
-  square, var,
+  square, var, (!),
   choice, (<||>),
-  concat_, (<--),
-  iter,
-  capture,
+  concat_, (<.>),
+  iter, (^*),
+  capture, (<<-),
   matches,
   match,
   Result(..),
-  Fix(..)
+  Fix(..),
+  lookupRSing, lookupR,
+  Return, with, (?), (??)
 ) where
 
 import Control.Applicative
-import Control.Monad (guard)
+import Control.Monad (MonadPlus, mzero, guard)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.MultiGenerics
@@ -59,26 +66,38 @@ inj = Inject
 square :: k ix -> Regex' k c f ix
 square = Square
 
+(!) :: k ix -> Regex' k c f ix
+(!) = square
+
 var :: k ix -> Regex' k c f ix
 var = square
 
 choice :: Regex' k c f ix -> Regex' k c f ix -> Regex' k c f ix
 choice = Choice
 
+infixl 3 <||>
 (<||>) :: Regex' k c f ix -> Regex' k c f ix -> Regex' k c f ix
 (<||>) = choice
 
 concat_ :: (k xi -> Regex' k c f ix) -> Regex' k c f xi -> Regex' k c f ix
 concat_ = Concat
 
-(<--) :: (k xi -> Regex' k c f ix) -> Regex' k c f xi -> Regex' k c f ix
-(<--) = concat_
+(<.>) :: (k xi -> Regex' k c f ix) -> Regex' k c f xi -> Regex' k c f ix
+(<.>) = concat_
 
 iter :: (k ix -> Regex' k c f ix) -> Regex' k c f ix
 iter r = Concat r (iter r)
 
+(^*) :: (k ix -> Regex' k c f ix) -> Regex' k c f ix
+(^*) = iter
+
 capture :: c -> Regex' k c f ix -> Regex' k c f ix
 capture = Capture
+
+infixl 4 <<-
+(<<-) :: c -> Regex' k c f ix -> Regex' k c f ix
+(<<-) = capture
+
 
 matches :: (Generic1m f, MatchG (Rep1m f))
         => Regex c f ix -> Fix f ix -> Bool
@@ -170,3 +189,65 @@ instance (MatchG a, MatchG b) => MatchG (a :**: b) where
 instance (MatchG f, SingI xi) => MatchG (Tag1m f xi) where
   matchesG (Tag1m r) (Tag1m t) = matchesG r t
   matchG   (Tag1m r) (Tag1m t) = matchG r t
+
+
+lookupRSing :: (Ord c, MonadPlus m, Eq (Sing ix))
+            => Map c (m (Result f))
+            -> c -> Sing ix -> m (Fix f ix)
+lookupRSing s k ix = [ unsafeCoerce x | Result xi x <- M.findWithDefault mzero k s
+                                      , ix == unsafeCoerce xi ]
+
+lookupR :: (Ord c, MonadPlus m, Eq (Sing ix), SingI ix)
+        => c -> Map c (m (Result f)) -> m (Fix f ix)
+lookupR k s = lookupRSing s k sing
+
+
+newtype Return ix = Return Integer deriving (Eq, Ord)
+
+(?) :: Return ix -> Integer
+(?) (Return n) = n
+
+(??) :: Return ix -> Sing ix -> Integer
+(??) (Return n) _ = n
+
+class With f ix fn r | fn -> r where
+  with :: fn -> Fix f ix -> Maybe r
+
+instance (Generic1m f, MatchG (Rep1m f), Ord c, SingI ix)
+         => With f ix (Regex c f ix) () where
+  with r t = (const ()) <$> (match r t :: Maybe (Map c [Result f]))
+
+instance (Generic1m f, MatchG (Rep1m f), SingI ix, SingI xi, Eq (Sing xi))
+         => With f ix (Return xi -> Regex Integer f ix) [Fix f xi] where
+  with r t = lookupR 1 <$> match (r (Return 1)) t
+
+instance (Generic1m f, MatchG (Rep1m f), SingI ix
+         , SingI xi1, Eq (Sing xi1), SingI xi2, Eq (Sing xi2))
+         => With f ix (Return xi1 -> Return xi2 -> Regex Integer f ix)
+                      ([Fix f xi1], [Fix f xi2]) where
+  with r t = (\m -> (lookupR 1 m, lookupR 2 m))
+             <$> match (r (Return 1) (Return 2)) t
+
+instance (Generic1m f, MatchG (Rep1m f), SingI ix
+         , SingI xi1, Eq (Sing xi1), SingI xi2, Eq (Sing xi2), SingI xi3, Eq (Sing xi3))
+         => With f ix (Return xi1 -> Return xi2 -> Return xi3 -> Regex Integer f ix)
+                      ([Fix f xi1], [Fix f xi2], [Fix f xi3]) where
+  with r t = (\m -> (lookupR 1 m, lookupR 2 m, lookupR 3 m))
+             <$> match (r (Return 1) (Return 2) (Return 3)) t
+
+instance (Generic1m f, MatchG (Rep1m f), SingI ix
+         , SingI xi1, Eq (Sing xi1), SingI xi2, Eq (Sing xi2)
+         , SingI xi3, Eq (Sing xi3), SingI xi4, Eq (Sing xi4))
+         => With f ix (Return xi1 -> Return xi2 -> Return xi3 -> Return xi4 -> Regex Integer f ix)
+                      ([Fix f xi1], [Fix f xi2], [Fix f xi3], [Fix f xi4]) where
+  with r t = (\m -> (lookupR 1 m, lookupR 2 m, lookupR 3 m, lookupR 4 m))
+             <$> match (r (Return 1) (Return 2) (Return 3) (Return 4)) t
+
+instance (Generic1m f, MatchG (Rep1m f), SingI ix
+         , SingI xi1, Eq (Sing xi1), SingI xi2, Eq (Sing xi2)
+         , SingI xi3, Eq (Sing xi3), SingI xi4, Eq (Sing xi4)
+         , SingI xi5, Eq (Sing xi5))
+         => With f ix (Return xi1 -> Return xi2 -> Return xi3 -> Return xi4 -> Return xi5 -> Regex Integer f ix)
+                      ([Fix f xi1], [Fix f xi2], [Fix f xi3], [Fix f xi4], [Fix f xi5]) where
+  with r t = (\m -> (lookupR 1 m, lookupR 2 m, lookupR 3 m, lookupR 4 m, lookupR 5 m))
+             <$> match (r (Return 1) (Return 2) (Return 3) (Return 4) (Return 5)) t

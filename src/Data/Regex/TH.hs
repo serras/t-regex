@@ -2,6 +2,7 @@
 module Data.Regex.TH where
 
 import Data.Regex.Generics
+import qualified Data.Regex.MultiGenerics as M
 import qualified Language.Haskell.Exts as E
 import Language.Haskell.Exts.Parser
 import Language.Haskell.Meta.Syntax.Translate
@@ -35,7 +36,7 @@ getUnboundVarsE (E.RightSection _ e) = getUnboundVarsE e
 getUnboundVarsE (E.Paren e)          = getUnboundVarsE e
 getUnboundVarsE (E.Lambda _ p e)     = let pvars = map (\(E.PVar n) -> n) p
                                         in filter (not . flip elem pvars) (getUnboundVarsE e)
-getUnboundVarsE _                    = fail "Only variables, lambdas and apps are supported"
+getUnboundVarsE _                    = []
 
 getFreeVars :: [E.Name] -> Q [E.Name]
 getFreeVars []                 = return []
@@ -57,3 +58,67 @@ rx = QuasiQuoter { quotePat  = rPat
                  , quoteType = fail "Quasi-quoter only supports patterns"
                  , quoteDec  = fail "Quasi-quoter only supports patterns"
                  }
+
+mrPat :: String -> Q Pat
+mrPat s = case parseExp ("(" ++ s ++ ")") of
+            ParseFailed _ msg -> fail msg
+            ParseOk expr -> do let (newExpr, unbound) = getUnboundVarsM expr
+                               eName <- getFreeVarsM unbound
+                               let nullSrc  = E.SrcLoc "" 0 0
+                                   fullExpr = E.App (E.Con (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Ident "Regex"))) newExpr
+                               case eName of
+                                 []  -> return $ ViewP (AppE (VarE 'M.with)
+                                                             (toExp fullExpr))
+                                                       (ConP 'Just [ConP '() []])
+                                 [(v,ty)] -> return $ ViewP (AppE (VarE 'M.with)
+                                                                  (toExp $ E.Lambda nullSrc [toVarM (v,ty)] fullExpr))
+                                                            (ConP 'Just [toPat (E.PVar v)])
+                                 vs  -> return $ ViewP (AppE (VarE 'M.with)
+                                                             (toExp $ E.Lambda nullSrc (map toVarM vs) fullExpr))
+                                                       (ConP 'Just [TupP $ map (toPat . E.PVar . fst) vs])
+
+getUnboundVarsM :: E.Exp -> (E.Exp, [(E.Name, E.Type)])
+getUnboundVarsM (E.ExpTypeSig l v@(E.Var (E.UnQual n)) ty) 
+                                     = ( E.App (E.App (E.Var (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "??"))) v)
+                                               (E.ExpTypeSig l (E.Var (E.Qual (E.ModuleName "Data.MultiGenerics") (E.Symbol "sing")))
+                                                               (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.MultiGenerics") (E.Symbol "Sing")))
+                                                                        ty))
+                                       , [(n,ty)])
+getUnboundVarsM v@(E.Var _)          = (v, [])
+getUnboundVarsM (E.App e1 e2)        = let (r1, m1) = getUnboundVarsM e1
+                                           (r2, m2) = getUnboundVarsM e2
+                                        in (E.App r1 r2, m1 ++ m2)
+getUnboundVarsM (E.InfixApp e1 o e2) = let (r1, m1) = getUnboundVarsM e1
+                                           (r2, m2) = getUnboundVarsM e2
+                                        in (E.InfixApp r1 o r2, m1 ++ m2)
+getUnboundVarsM (E.LeftSection e o)  = let (r,m) = getUnboundVarsM e
+                                        in (E.LeftSection r o, m)
+getUnboundVarsM (E.RightSection o e) = let (r,m) = getUnboundVarsM e
+                                        in (E.RightSection o r, m)
+getUnboundVarsM (E.Paren e)          = let (r,m) = getUnboundVarsM e
+                                        in (E.Paren r, m)
+getUnboundVarsM (E.Lambda l p e)     = let pvars = map (\(E.PVar n) -> n) p
+                                           (r,m) = getUnboundVarsM e
+                                        in (E.Lambda l p r, filter (not . flip elem pvars . fst) m)
+getUnboundVarsM x                    = (x, [])
+
+getFreeVarsM :: [(E.Name, E.Type)] -> Q [(E.Name, E.Type)]
+getFreeVarsM []                     = return []
+getFreeVarsM ((n@(E.Ident i),t):ns) = do nRest <- getFreeVarsM ns
+                                         l <- lookupValueName i
+                                         case l of
+                                           Nothing -> return ((n,t):nRest)
+                                           Just _  -> return nRest
+getFreeVarsM (_:ns)                 = getFreeVarsM ns
+
+toVarM :: (E.Name, E.Type) -> E.Pat
+toVarM (e,ty) = E.PatTypeSig (E.SrcLoc "" 0 0)
+                             (E.PVar e)
+                             (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "Return"))) ty)
+
+mrx :: QuasiQuoter
+mrx = QuasiQuoter { quotePat  = mrPat
+                  , quoteExp  = fail "Quasi-quoter only supports patterns"
+                  , quoteType = fail "Quasi-quoter only supports patterns"
+                  , quoteDec  = fail "Quasi-quoter only supports patterns"
+                  }
