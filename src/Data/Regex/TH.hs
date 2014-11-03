@@ -9,7 +9,7 @@ import Language.Haskell.TH
 import Language.Haskell.TH.Quote
 
 rPat :: String -> Q Pat
-rPat s = case parseExp s of
+rPat s = case parseExp ("(" ++ s ++ ")") of
            ParseFailed _ msg -> fail msg
            ParseOk expr -> do eName <- getFreeVars (getUnboundVarsE expr)
                               let nullSrc  = E.SrcLoc "" 0 0
@@ -30,6 +30,9 @@ getUnboundVarsE (E.Var (E.UnQual n)) = [n]
 getUnboundVarsE (E.Var _)            = []
 getUnboundVarsE (E.App e1 e2)        = getUnboundVarsE e1 ++ getUnboundVarsE e2
 getUnboundVarsE (E.InfixApp e1 _ e2) = getUnboundVarsE e1 ++ getUnboundVarsE e2
+getUnboundVarsE (E.LeftSection e _)  = getUnboundVarsE e
+getUnboundVarsE (E.RightSection _ e) = getUnboundVarsE e
+getUnboundVarsE (E.Paren e)          = getUnboundVarsE e
 getUnboundVarsE (E.Lambda _ p e)     = let pvars = map (\(E.PVar n) -> n) p
                                         in filter (not . flip elem pvars) (getUnboundVarsE e)
 getUnboundVarsE _                    = fail "Only variables, lambdas and apps are supported"

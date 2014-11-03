@@ -63,9 +63,9 @@ eWith2 (with rTree3 -> Just (_,e)) = e
 eWith2 _                           = error "What?"
 
 eWith2Bis :: Tree -> [Tree]
-eWith2Bis [rx|iter $ \k -> x <<- inj (Branch' 2 (k!) (k!)) <||> e <<- (inj Leaf') |] = e
+eWith2Bis [rx| (\k -> x <<- Branch_ 2 (k!) (k!) <||> e <<- Leaf_)^* |] = e
 eWith2Bis _  = error "What?"
 
 eWith3 :: Tree -> [Tree]
-eWith3 [rx| x <<- inj Leaf' |] = x
-eWith3 _                       = error "What?"
+eWith3 [rx| x <<- Leaf_ |] = x
+eWith3 _                   = error "What?"
