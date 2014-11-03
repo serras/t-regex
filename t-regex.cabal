@@ -12,8 +12,8 @@ library
   exposed-modules:   Data.MultiGenerics,
                      Data.Regex.Generics,
                      Data.Regex.MultiGenerics,
-                     Data.Regex.Example,
-                     Data.Regex.MultiExample,
+                     Data.Regex.Example.Mono,
+                     Data.Regex.Example.Multi,
                      Data.Regex.TH
   -- other-modules:       
   -- other-extensions:    
@@ -25,4 +25,4 @@ library
                      haskell-src-meta
   hs-source-dirs:    src
   default-language:  Haskell2010
-  ghc-options:       -Wall -ddump-splices
+  ghc-options:       -Wall

@@ -1,5 +1,6 @@
 {-# LANGUAGE TemplateHaskell #-}
-module Data.Regex.TH where
+-- | Quasi-quoters for doing pattern matching using tree regular expressions.
+module Data.Regex.TH (rx, mrx) where
 
 import Data.Regex.Generics
 import qualified Data.Regex.MultiGenerics as M
@@ -52,6 +53,24 @@ toIntegerVar e = E.PatTypeSig (E.SrcLoc "" 0 0)
                               (E.PVar e)
                               (E.TyCon (E.Qual (E.ModuleName "Prelude") (E.Ident "Integer")))
 
+-- | Builds a pattern for a matching a tree regular expression over
+--   a regular data type. Those variables not bound are taken to be
+--   capture identifiers. Note that the value of capture identifiers
+--   is always a list, even if it matches only one subterm in the
+--   given tree regular expression.
+--
+--   One example of use is:
+--
+--   > f [rx| iter $ \k -> x <<- inj One <||> y <<- inj (Two (k!)) |] =
+--   >   ... x and y available here with type [Fix f] ...
+--
+--   In many cases, it is useful to define pattern synonyms for
+--   injecting constructors, as shown below:
+--
+--   > pattern One_   = Inject One
+--   > pattern Two_ x = Inject (Two_ x)
+--   > 
+--   > f [rx| (\k -> x <<- One_ <||> y <<- Two_ (k!))^* |] = ...
 rx :: QuasiQuoter
 rx = QuasiQuoter { quotePat  = rPat
                  , quoteExp  = fail "Quasi-quoter only supports patterns"
@@ -116,6 +135,18 @@ toVarM (e,ty) = E.PatTypeSig (E.SrcLoc "" 0 0)
                              (E.PVar e)
                              (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "Return"))) ty)
 
+-- | Builds a pattern for a matching a tree regular expression over
+--   a family of regular data type. Those variables not bound are
+--   taken to be capture identifiers, and their index should be explicitly
+--   given in the expression. Note that the value of capture identifiers
+--   is always a list, even if it matches only one subterm in the
+--   given tree regular expression.
+--
+--   One example of use is:
+--
+--   > f [mrx| iter $ \k -> (x :: A) <<- inj One <||> (y :: B) <<- inj (Two (k!)) |] =
+--   >   ... x is available with type [Fix f A]
+--   >   ... and y with type [Fix f B]
 mrx :: QuasiQuoter
 mrx = QuasiQuoter { quotePat  = mrPat
                   , quoteExp  = fail "Quasi-quoter only supports patterns"

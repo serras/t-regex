@@ -5,19 +5,39 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE KindSignatures #-}
+-- | Tree regular expressions over regular data types.
 module Data.Regex.Generics (
+  -- * Base types
   Regex(Regex),
   Regex'(Inject),
-  empty_, none,
-  any_,
-  inj,
-  square, var, (!),
-  choice, (<||>),
-  concat_, (<.>),
-  iter, (^*),
-  capture, (<<-),
-  matches, match,
   Fix(..),
+  
+  -- * Constructors
+  -- | For a description and study of tree regular expressions, you are invited to read
+  --   Chapter 2 of <http://tata.gforge.inria.fr/ Tree Automata Techniques and Applications>.
+  
+  -- ** Emptiness
+  empty_, none,
+  -- ** Whole language
+  any_,
+  -- ** Injection
+  inj,
+  -- ** Holes/squares
+  square, var, (!),
+  -- ** Alternation
+  choice, (<||>),
+  -- ** Concatenation
+  concat_, (<.>),
+  -- ** Iteration
+  iter, (^*),
+  -- ** Capture
+  capture, (<<-),
+  
+  -- * Matching
+  matches, match,
+  
+  -- * Views
   with
 ) where
 
@@ -29,68 +49,91 @@ import qualified Data.Map as M
 import Data.Maybe (isJust)
 import GHC.Generics
 
-data Regex' k c f
+-- | The basic data type for tree regular expressions.
+--
+--   * 'k' is used as phantom type to point to concatenation and iteration positions.
+--   * 'c' is the type of capture identifiers.
+--   * 'f' is the pattern functor over which regular expressions match. In tree regular expression jargon, expresses the set of constructors for nodes.
+data Regex' k c (f :: * -> *)
   = Empty
   | Any
-  | Inject (f (Regex' k c f))
+  | Inject (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected constructors.
   | Square k
   | Choice (Regex' k c f) (Regex' k c f)
   | Concat (k -> Regex' k c f) (Regex' k c f)
   | Capture c (Regex' k c f)
-newtype Regex c f = Regex { unRegex :: forall k. Regex' k c f }
+-- | Tree regular expressions over pattern functor 'f' with capture identifiers of type 'c'.
+newtype Regex c (f :: * -> *) = Regex { unRegex :: forall k. Regex' k c f }
 
-empty_ :: Regex' k c f
+-- | Matches no value.
+empty_, none :: Regex' k c f
 empty_ = Empty
-
-none :: Regex' k c f
 none = empty_
 
+-- | Matches any value of the data type.
 any_ :: Regex' k c f
 any_ = Any
 
+-- | Injects a constructor as a regular expression.
+-- That is, specifies a tree regular expression whose root is given by a constructor
+-- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
 inj :: f (Regex' k c f) -> Regex' k c f
 inj = Inject
 
-square :: k -> Regex' k c f
+-- | Indicates the position of a hole in a regular expression.
+square, var :: k -> Regex' k c f
 square = Square
-
-var :: k -> Regex' k c f
 var = square
 
+-- | Indicates the position of a hole in a regular expression.
+--   This function is meant to be used with the @PostfixOperators@ pragma.
 (!) :: k -> Regex' k c f
 (!) = square
 
-choice :: Regex' k c f -> Regex' k c f -> Regex' k c f
-choice = Choice
-
+-- | Expresses alternation between two tree regular expressions:
+--   Data types may match one or the other.
+--   When capturing, the first one is given priority.
 infixl 3 <||>
-(<||>) :: Regex' k c f -> Regex' k c f -> Regex' k c f
+choice, (<||>) :: Regex' k c f -> Regex' k c f -> Regex' k c f
+choice = Choice
 (<||>) = choice
 
-concat_ :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
+-- | Concatenation: a whole in the first tree regular expression
+--   is replaced by the second one.
+concat_, (<.>) :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
 concat_ = Concat
-
-(<.>) :: (k -> Regex' k c f) -> Regex' k c f -> Regex' k c f
 (<.>) = concat_
 
+-- | Repeated replacement of a hole in a tree regular expression.
+--   Iteration fulfills the law: @iter r = r \<.\> iter r@.
 iter :: (k -> Regex' k c f) -> Regex' k c f
 iter r = Concat r (iter r)
 
+-- | Repeated replacement of a hole in a tree regular expression.
+--   This function is meant to be used with the @PostfixOperators@ pragma.
 (^*) :: (k -> Regex' k c f) -> Regex' k c f
 (^*) = iter
 
-capture :: c -> Regex' k c f -> Regex' k c f
-capture = Capture
-
+-- | Indicates a part of a value that, when matched, should be
+--   given a name of type 'c' and saved for querying.
 infixl 4 <<-
-(<<-) :: c -> Regex' k c f -> Regex' k c f
+capture, (<<-) :: c -> Regex' k c f -> Regex' k c f
+capture = Capture
 (<<-) = capture
 
 
+-- | Checks whether a term 't' matches the tree regular expression 'r'.
 matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
         => Regex c f -> Fix f -> Bool
 r `matches` t = isJust $ (match r t :: Maybe (Map c [Fix f]))
 
+-- | Checks whether a term 't' matches the tree regular expression 'r'.
+--   When successful, it returns in addition a map of captured subterms.
+--
+--   The behaviour of several matches over the same capture identifier
+--   is governed by the 'Alternative' functor 'm'. For example, if
+--   @m = []@, all matches are returned in prefix-order. If @m = Maybe@,
+--   only the first result is returned.
 match :: (Ord c, Generic1 f, MatchG (Rep1 f), Alternative m)
       => Regex c f -> Fix f -> Maybe (Map c (m (Fix f)))
 match r t = match' (unRegex r) t 0 []
@@ -141,6 +184,16 @@ instance (MatchG a, MatchG b) => MatchG (a :*: b) where
 
 
 class With f fn r | fn -> r where
+  -- | Useful function to be used as view pattern.
+  --   The first argument should be a function, which indicates those places where captured are found
+  --   Those captured are automatically put in a tuple, giving a simpler and type-safer
+  --   access to captured subterms that looking inside a map.
+  --
+  --   As an example, here is how one would use it for capturing two subterms:
+  --
+  --   > f (with (\x y -> iter $ \k -> x <<- inj One <||> y <<- inj (Two (var k))) -> Just (x, y)) = ... x and y available here ...
+  --
+  --   For more concise syntax which uses quasi-quotation, check "Data.Regex.TH".
   with :: fn -> Fix f -> Maybe r
 
 instance (Generic1 f, MatchG (Rep1 f), Ord c)

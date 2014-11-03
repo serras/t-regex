@@ -7,18 +7,40 @@
 {-# LANGUAGE PostfixOperators #-}
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Data.Regex.Example where
+-- | Example of tree regular expressions over a regular data type.
+--   Click on @Source@ to view the code.
+module Data.Regex.Example.Mono (
+  -- * Data type definition
+  Tree'(..), Tree,
+  -- ** Useful pattern synonyms
+  pattern Leaf, pattern Branch,
+  -- ** Some 'Tree' values
+  aTree1, aTree2, aTree3,
+  -- * Tree regular expressions
+  -- ** Useful pattern synonyms
+  pattern Leaf_, pattern Branch_,
+  -- ** Some stand-alone expressions
+  rTree1, rTree2, rTree3,
+  -- ** Using 'with' views
+  eWith1, eWith2,
+  -- ** Using the 'rx' quasi-quoter
+  eWith2Bis, eWith3
+) where
 
 import Data.Regex.Generics
 import Data.Regex.TH
 import GHC.Generics
 
+-- | The pattern functor, which should be kept open.
+--   Recursion is done by using the argument.
 data Tree' f = Leaf' | Branch' Int f f
   deriving (Generic1, Show)
+-- | Closes the data type by creating its fix-point.
 type Tree = Fix Tree'
 
--- Pattern synonyms for constructors
+-- | Pattern synonym for the 'Leaf' constructor inside 'Fix'.
 pattern Leaf = Fix Leaf'
+-- | Pattern synonym for the 'Branch' constructor inside 'Fix'.
 pattern Branch n l r = Fix (Branch' n l r)
 
 instance Show Tree where
