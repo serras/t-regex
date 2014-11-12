@@ -6,6 +6,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
+{-# LANGUAGE ConstraintKinds #-}
 -- | Tree regular expressions over regular data types.
 module Data.Regex.Generics (
   -- * Base types
@@ -35,6 +36,7 @@ module Data.Regex.Generics (
   capture, (<<-),
   
   -- * Matching
+  Matchable,
   matches, match,
   
   -- * Views
@@ -122,8 +124,11 @@ capture = Capture
 (<<-) = capture
 
 
+-- | Types which can be matched.
+type Matchable f = (Generic1 f, MatchG (Rep1 f))
+
 -- | Checks whether a term 't' matches the tree regular expression 'r'.
-matches :: forall c f. (Ord c, Generic1 f, MatchG (Rep1 f))
+matches :: forall c f. (Ord c, Matchable f)
         => Regex c f -> Fix f -> Bool
 r `matches` t = isJust $ (match r t :: Maybe (Map c [Fix f]))
 
@@ -134,11 +139,11 @@ r `matches` t = isJust $ (match r t :: Maybe (Map c [Fix f]))
 --   is governed by the 'Alternative' functor 'm'. For example, if
 --   @m = []@, all matches are returned in prefix-order. If @m = Maybe@,
 --   only the first result is returned.
-match :: (Ord c, Generic1 f, MatchG (Rep1 f), Alternative m)
+match :: (Ord c, Matchable f, Alternative m)
       => Regex c f -> Fix f -> Maybe (Map c (m (Fix f)))
 match r t = match' (unRegex r) t 0 []
 
-match' :: (Ord c, Generic1 f, MatchG (Rep1 f), Alternative m)
+match' :: (Ord c, Matchable f, Alternative m)
        => Regex' Integer c f
        -> Fix f
        -> Integer  -- Fresh variable generator
@@ -153,7 +158,7 @@ match' (Concat r1 r2)   t i s = match' (r1 i) t (i+1) ((i,r2):s)
 match' (Capture c r)    t i s = M.insertWith (<|>) c (pure t) <$> match' r t i s
 
 class MatchG f where
-  matchG :: (Ord c, Generic1 g, MatchG (Rep1 g), Alternative m)
+  matchG :: (Ord c, Matchable g, Alternative m)
          => f (Regex' Integer c g) -> f (Fix g)
          -> Integer -> [(Integer, Regex' Integer c g)]
          -> Maybe (Map c (m (Fix g)))

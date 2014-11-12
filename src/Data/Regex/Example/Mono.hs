@@ -28,6 +28,7 @@ module Data.Regex.Example.Mono (
 ) where
 
 import Data.Regex.Generics
+import Data.Regex.Rules
 import Data.Regex.TH
 import GHC.Generics
 
@@ -91,3 +92,6 @@ eWith2Bis _  = error "What?"
 eWith3 :: Tree -> [Tree]
 eWith3 [rx| x <<- Leaf_ |] = x
 eWith3 _                   = error "What?"
+
+-- grammar1 :: Grammar String Tree' Int String
+-- grammar1 = 
