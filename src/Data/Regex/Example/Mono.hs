@@ -24,9 +24,12 @@ module Data.Regex.Example.Mono (
   -- ** Using 'with' views
   eWith1, eWith2,
   -- ** Using the 'rx' quasi-quoter
-  eWith2Bis, eWith3
+  eWith2Bis, eWith3, eWith4,
+  -- * Grammar and rules
+  grammar1
 ) where
 
+import qualified Data.Map as M
 import Data.Regex.Generics
 import Data.Regex.Rules
 import Data.Regex.TH
@@ -34,7 +37,7 @@ import GHC.Generics
 
 -- | The pattern functor, which should be kept open.
 --   Recursion is done by using the argument.
-data Tree' f = Leaf' | Branch' Int f f
+data Tree' f = Leaf' | Branch' { elt :: Int, left :: f, right :: f }
   deriving (Generic1, Show)
 -- | Closes the data type by creating its fix-point.
 type Tree = Fix Tree'
@@ -93,5 +96,25 @@ eWith3 :: Tree -> [Tree]
 eWith3 [rx| x <<- Leaf_ |] = x
 eWith3 _                   = error "What?"
 
--- grammar1 :: Grammar String Tree' Int String
--- grammar1 = 
+eWith4 :: Tree -> [Int]
+eWith4 [rx| (\k -> x <<- shallow (Branch' __ (k!) (k!)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
+eWith4 _  = error "What?"
+
+unFix :: Fix f -> f (Fix f)
+unFix (Fix x) = x
+
+grammar1 :: Grammar String Tree' () String
+grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
+             , \_ _ children ->
+                  ( M.fromList [("l",()),("r",())]
+                  , "(" ++ children M.! "l"
+                    ++ ")-SPECIAL-("
+                    ++ children M.! "r" ++ ")" ) )
+           , ( Regex $ shallow (Branch' __ ("l" <<- any_) ("r" <<- any_))
+             , \(Branch e _ _) _ children ->
+                  ( M.fromList [("l",()),("r",())]
+                  , "(" ++ children M.! "l"
+                    ++ ")-" ++ show e  ++ "-("
+                    ++ children M.! "r" ++ ")" ) )
+           , ( Regex $ Leaf_, \_ _ _ -> (M.empty, "leaf") )
+           ]

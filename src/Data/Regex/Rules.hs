@@ -3,7 +3,9 @@
 {-# LANGUAGE ConstraintKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 module Data.Regex.Rules (
-  eval
+  Action, Rule, Grammar,
+  eval,
+  (!!)
 ) where
 
 import Control.Applicative
@@ -24,6 +26,5 @@ eval grammar inh term = fromJust $ foldr (<|>) empty $ map evalRule grammar
   where evalRule (regex, action) = do  -- Maybe monad
           (captures :: Map c [Fix f]) <- match regex term
           let (children, syn) = action term inh $ M.mapWithKey evalList captures
-              evalList k = foldMap (eval grammar (fromJust (M.lookup k children)))
+              evalList k = foldMap $ eval grammar (children M.! k)
           return syn
-  

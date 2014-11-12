@@ -11,7 +11,7 @@
 module Data.Regex.Generics (
   -- * Base types
   Regex(Regex),
-  Regex'(Inject),
+  Regex'(Inject,Shallow),
   Fix(..),
   
   -- * Constructors
@@ -23,7 +23,7 @@ module Data.Regex.Generics (
   -- ** Whole language
   any_,
   -- ** Injection
-  inj,
+  inj, shallow, __,
   -- ** Holes/squares
   square, var, (!),
   -- ** Alternation
@@ -55,11 +55,17 @@ import GHC.Generics
 --
 --   * 'k' is used as phantom type to point to concatenation and iteration positions.
 --   * 'c' is the type of capture identifiers.
---   * 'f' is the pattern functor over which regular expressions match. In tree regular expression jargon, expresses the set of constructors for nodes.
+--   * 'f' is the pattern functor over which regular expressions match.
+--     In tree regular expression jargon, expresses the set of constructors for nodes.
+--
+-- Note that we differentiate between constructors fully or shallow injected.
+-- For fully injected constructors, we check the information inside those fields
+-- which are not of type 'f'. With shallow ones, those are not checked.
 data Regex' k c (f :: * -> *)
   = Empty
   | Any
-  | Inject (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected constructors.
+  | Inject  (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected full constructors.
+  | Shallow (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected shallow constructors.
   | Square k
   | Choice (Regex' k c f) (Regex' k c f)
   | Concat (k -> Regex' k c f) (Regex' k c f)
@@ -76,11 +82,23 @@ none = empty_
 any_ :: Regex' k c f
 any_ = Any
 
--- | Injects a constructor as a regular expression.
+-- | Fully injects a constructor as a regular expression.
 -- That is, specifies a tree regular expression whose root is given by a constructor
 -- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
+-- When matching, fields of types other than 'f' are checked for equality.
 inj :: f (Regex' k c f) -> Regex' k c f
 inj = Inject
+
+-- | Shallow injects a constructor as a regular expression.
+-- That is, specifies a tree regular expression whose root is given by a constructor
+-- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
+-- When matching, fields of types other than 'f' are not checked.
+shallow :: f (Regex' k c f) -> Regex' k c f
+shallow = Shallow
+
+-- | Useful function to combine with 'shallow' and match anything in a non-'f' field.
+__ :: a
+__ = error "This element should not be checked"
 
 -- | Indicates the position of a hole in a regular expression.
 square, var :: k -> Regex' k c f
@@ -149,43 +167,53 @@ match' :: (Ord c, Matchable f, Alternative m)
        -> Integer  -- Fresh variable generator
        -> [(Integer, Regex' Integer c f)]  -- Ongoing substitution
        -> Maybe (Map c (m (Fix f)))
-match' Empty            _ _ _ = Nothing
-match' Any              _ _ _ = Just M.empty
-match' (Inject r) (Fix t) i s = matchG (from1 r) (from1 t) i s
-match' (Square n)       t i s = let Just r = lookup n s in match' r t i s
-match' (Choice r1 r2)   t i s = match' r1 t i s <|> match' r2 t i s
-match' (Concat r1 r2)   t i s = match' (r1 i) t (i+1) ((i,r2):s)
-match' (Capture c r)    t i s = M.insertWith (<|>) c (pure t) <$> match' r t i s
+match' Empty             _ _ _ = Nothing
+match' Any               _ _ _ = Just M.empty
+match' (Inject r)  (Fix t) i s = injG (from1 r) (from1 t) i s
+match' (Shallow r) (Fix t) i s = shaG (from1 r) (from1 t) i s
+match' (Square n)        t i s = let Just r = lookup n s in match' r t i s
+match' (Choice r1 r2)    t i s = match' r1 t i s <|> match' r2 t i s
+match' (Concat r1 r2)    t i s = match' (r1 i) t (i+1) ((i,r2):s)
+match' (Capture c r)     t i s = M.insertWith (<|>) c (pure t) <$> match' r t i s
 
 class MatchG f where
-  matchG :: (Ord c, Matchable g, Alternative m)
-         => f (Regex' Integer c g) -> f (Fix g)
-         -> Integer -> [(Integer, Regex' Integer c g)]
-         -> Maybe (Map c (m (Fix g)))
+  injG, shaG :: (Ord c, Matchable g, Alternative m)
+             => f (Regex' Integer c g) -> f (Fix g)
+             -> Integer -> [(Integer, Regex' Integer c g)]
+             -> Maybe (Map c (m (Fix g)))
 
 instance MatchG U1 where
-  matchG _ _ _ _ = Just M.empty
+  injG _ _ _ _ = Just M.empty
+  shaG _ _ _ _ = Just M.empty
 
 instance MatchG Par1 where
-  matchG (Par1 r) (Par1 t) = match' r t
+  injG (Par1 r) (Par1 t) = match' r t
+  shaG (Par1 r) (Par1 t) = match' r t
 
 instance Eq c => MatchG (K1 i c) where
-  matchG (K1 r) (K1 t) _ _ = do guard (r == t)
-                                return M.empty
+  injG (K1 r) (K1 t) _ _ = do guard (r == t)
+                              return M.empty
+  shaG _      _      _ _ = return M.empty
 
 instance MatchG f => MatchG (Rec1 f) where
-  matchG (Rec1 r) (Rec1 t) = matchG r t
+  injG (Rec1 r) (Rec1 t) = injG r t
+  shaG (Rec1 r) (Rec1 t) = shaG r t
 
 instance MatchG a => MatchG (M1 i c a) where
-  matchG (M1 r) (M1 t) = matchG r t
+  injG (M1 r) (M1 t) = injG r t
+  shaG (M1 r) (M1 t) = shaG r t
 
 instance (MatchG a, MatchG b) => MatchG (a :+: b) where
-  matchG (L1 r) (L1 t) i s = matchG r t i s
-  matchG (R1 r) (R1 t) i s = matchG r t i s
-  matchG _      _      _ _ = Nothing
+  injG (L1 r) (L1 t) i s = injG r t i s
+  injG (R1 r) (R1 t) i s = injG r t i s
+  injG _      _      _ _ = Nothing
+  shaG (L1 r) (L1 t) i s = shaG r t i s
+  shaG (R1 r) (R1 t) i s = shaG r t i s
+  shaG _      _      _ _ = Nothing
 
 instance (MatchG a, MatchG b) => MatchG (a :*: b) where
-  matchG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> matchG r1 t1 i s <*> matchG r2 t2 i s
+  injG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> injG r1 t1 i s <*> injG r2 t2 i s
+  shaG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> shaG r1 t1 i s <*> shaG r2 t2 i s
 
 
 class With f fn r | fn -> r where
