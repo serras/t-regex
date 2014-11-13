@@ -32,6 +32,7 @@ module Data.Regex.Example.Mono (
 import Control.Lens hiding (at, (#), children)
 import Data.Map ((!))
 import qualified Data.Map as M
+import Data.Monoid (Sum(..))
 import Data.Regex.Generics
 import Data.Regex.Rules
 import Data.Regex.TH
@@ -121,18 +122,21 @@ grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
            , ( Regex $ Leaf_, \_ _ _ -> (M.empty, "leaf") )
            ]
 
-grammar2 :: Grammar Integer Tree' () String
+grammar2 :: Grammar Integer Tree' () (String, Sum Integer)
 grammar2 = [
     rule $ \l r ->
      inj (Branch' 2 (l <<- any_) (r <<- any_)) ->> do
-       lText <- use (at l . syn)
-       rText <- use (at r . syn)
-       this . syn .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       this.syn._1 .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
   , rule $ \l r ->
      shallow (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
-       lText <- use (at l . syn)
-       rText <- use (at r . syn)
-       this . syn .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       this.syn._1 .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
   , rule $ Leaf_ ->> do
-       this . syn .= "leaf"
+       this.syn._1 .= "leaf"
+       this.syn._2 .= Sum 1
   ]
