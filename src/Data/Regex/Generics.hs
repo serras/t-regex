@@ -25,7 +25,7 @@ module Data.Regex.Generics (
   -- ** Injection
   inj, shallow, __,
   -- ** Holes/squares
-  square, var, (!),
+  square, var, (#),
   -- ** Alternation
   choice, (<||>),
   -- ** Concatenation
@@ -107,8 +107,8 @@ var = square
 
 -- | Indicates the position of a hole in a regular expression.
 --   This function is meant to be used with the @PostfixOperators@ pragma.
-(!) :: k -> Regex' k c f
-(!) = square
+(#) :: k -> Regex' k c f
+(#) = square
 
 -- | Expresses alternation between two tree regular expressions:
 --   Data types may match one or the other.

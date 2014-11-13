@@ -26,9 +26,11 @@ module Data.Regex.Example.Mono (
   -- ** Using the 'rx' quasi-quoter
   eWith2Bis, eWith3, eWith4,
   -- * Grammar and rules
-  grammar1
+  grammar1, grammar2
 ) where
 
+import Control.Lens hiding (at, (#), children)
+import Data.Map ((!))
 import qualified Data.Map as M
 import Data.Regex.Generics
 import Data.Regex.Rules
@@ -78,7 +80,7 @@ pattern Branch_ n l r = Inject (Branch' n l r)
 pattern Leaf_         = Inject Leaf'
 
 rTree3 :: Integer -> Integer -> Regex Integer Tree'
-rTree3 c1 c2 = Regex ( (\k -> c1 <<- Branch_ 2 (k!) (k!) <||> c2 <<- Leaf_)^* )
+rTree3 c1 c2 = Regex ( (\k -> c1 <<- Branch_ 2 (k#) (k#) <||> c2 <<- Leaf_)^* )
 
 eWith1 :: Tree -> [Tree]
 eWith1 (with rTree2 -> Just e) = e
@@ -89,7 +91,7 @@ eWith2 (with rTree3 -> Just (_,e)) = e
 eWith2 _                           = error "What?"
 
 eWith2Bis :: Tree -> [Tree]
-eWith2Bis [rx| (\k -> x <<- Branch_ 2 (k!) (k!) <||> e <<- Leaf_)^* |] = e
+eWith2Bis [rx| (\k -> x <<- Branch_ 2 (k#) (k#) <||> e <<- Leaf_)^* |] = e
 eWith2Bis _  = error "What?"
 
 eWith3 :: Tree -> [Tree]
@@ -97,7 +99,7 @@ eWith3 [rx| x <<- Leaf_ |] = x
 eWith3 _                   = error "What?"
 
 eWith4 :: Tree -> [Int]
-eWith4 [rx| (\k -> x <<- shallow (Branch' __ (k!) (k!)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
+eWith4 [rx| (\k -> x <<- shallow (Branch' __ (k#) (k#)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
 eWith4 _  = error "What?"
 
 unFix :: Fix f -> f (Fix f)
@@ -107,14 +109,30 @@ grammar1 :: Grammar String Tree' () String
 grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
              , \_ _ children ->
                   ( M.fromList [("l",()),("r",())]
-                  , "(" ++ children M.! "l"
+                  , "(" ++ children ! "l"
                     ++ ")-SPECIAL-("
-                    ++ children M.! "r" ++ ")" ) )
+                    ++ children ! "r" ++ ")" ) )
            , ( Regex $ shallow (Branch' __ ("l" <<- any_) ("r" <<- any_))
              , \(Branch e _ _) _ children ->
                   ( M.fromList [("l",()),("r",())]
-                  , "(" ++ children M.! "l"
+                  , "(" ++ children ! "l"
                     ++ ")-" ++ show e  ++ "-("
-                    ++ children M.! "r" ++ ")" ) )
+                    ++ children ! "r" ++ ")" ) )
            , ( Regex $ Leaf_, \_ _ _ -> (M.empty, "leaf") )
            ]
+
+grammar2 :: Grammar Integer Tree' () String
+grammar2 = [
+    rule $ \l r ->
+     inj (Branch' 2 (l <<- any_) (r <<- any_)) ->> do
+       lText <- use (at l . syn)
+       rText <- use (at r . syn)
+       this . syn .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
+  , rule $ \l r ->
+     shallow (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
+       lText <- use (at l . syn)
+       rText <- use (at r . syn)
+       this . syn .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
+  , rule $ Leaf_ ->> do
+       this . syn .= "leaf"
+  ]
