@@ -57,7 +57,7 @@ while keeping our loved Haskell type safety.
 
 The available combinators to build regular expressions follow the syntax
 of [Tree Automata Techniques and Applications](http://tata.gforge.inria.fr/),
-Cahpter 2.
+Chapter 2.
 
 #### Emptiness
 
@@ -75,7 +75,7 @@ A regular expression of the form `r1 <||> r2` tries to match `r1`, and if
 it not possible, it tries to do so with `r2`. Note than when capturing,
 the first regular expression is given priority.
 
-### Injection
+#### Injection
 
 Of course, at some point you would like to check whether some term has
 a specific shape. In our case, this means that it has been constructed in
@@ -221,7 +221,91 @@ example with (\leaves -> Regex $ iter $ \k -> inj (Branch' 2 (k#) (k#))
            = leaves
 example _  = []
 ```
-Notice that the pattern is always similar `with (\capture variables ->
-regular expression) -> Just (capture variables)`.
+Notice that the pattern is always similar `with (\v1 v2 ... ->
+regular expression) -> Just (v1,v2,...)`.
 
 ## Attribute grammars
+
+[Attribute grammars](https://www.haskell.org/haskellwiki/The_Monad.Reader/Issue4/Why_Attribute_Grammars_Matter)
+are a powerful way to perform computations over a term. The main
+idea is that each node in your term (when seen as a tree) is
+traversed, and two sets of information are recorded at each point:
+
+  * *Inherited attributes* go from parent to children. When
+    describing a grammar, each node needs to specify the value
+	of inherited attributes of all their children,
+  * *Synthesized attributes* flow in the other direction.
+    At each node, you need to described how to get the value
+	of each synthesized attribute based on your inherited
+	attributes and the synthesized attributes of children.
+
+The most performant attribute grammar compilers, such as
+[UUAGC](http://foswiki.cs.uu.nl/foswiki/HUT/AttributeGrammarSystem)
+only allow deciding which rule to apply on a node depending on
+their topmost constructor. With `t-regex` you can look as
+deep as you want to take this decision (but of course, performance
+will suffer if you do this very often).
+
+Here is an example of a grammar which computes a graphical
+representation of a `Tree` plus its number of leaves:
+```haskell
+grammar = [
+    rule $ \l r ->
+     inj (Branch' 2 (l <<- any_) (r <<- any_)) ->> do
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       this.syn._1 .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
+  , rule $ \l r ->
+     shallow (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
+	   check $ e >= 0
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       this.syn._1 .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
+  , rule $ Leaf_ ->> do
+       this.syn._1 .= "leaf"
+       this.syn._2 .= Sum 1
+  ]
+```
+Let's dissect it part by part.
+
+First of all, a grammar is made of a series of *rules*. Each rule
+follows the same schema:
+```haskell
+rule $ \v1 ... vn ->
+  regular expression ->> do
+    actions
+```
+`rule` is the constant part which prefixes every rule. Then, you
+have the set of variables which will be used to capture information
+from the term, in a similar way to previous section. After that you
+have the tree regular expression the term needs to match. Finally,
+and separated by `->>`, you find the actions to perform when this
+rule is selected.
+
+Two small extensions are shown in the second rule. By default,
+`->>` does not give you access to the matched term. However, if you
+need to access some of its information (for example, because you
+used `shallow`, as in this case), you can use the alternative version
+`->>>` which gives this as an argument. The second extension is the
+use of `check` to pinpoint a logical condition which is not captured
+by the regular expression itself.
+
+The syntax for the actions relies heavily in lenses and operators
+from the `lens` package. In particular, you have four lenses:
+
+  * `this.inh` gives access to the inherited attributes of the node,
+  * `at n . syn` gives access to the synthesized attributes of children,
+  * `this.syn` is where you set the synthesized attributes of your node,
+  * `at n . inh` is where you set the inherited attributes of children,
+
+Furthermore, you can combine those with lenses over your inherited
+and synthesized attribute data type to have more lightweight syntax.
+In our case, the synthesized attributes are a tuple `(String, Sum Int)`,
+so we access them with `_1` and `_2`, as shown in the example.
+
+The general rule is that you read values using `use`, and set values
+via `.=`. If some value is not set, it defaults to the empty element
+of your synthesized type, or to the value of parent node in the case
+of inherited attributes.
