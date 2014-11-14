@@ -13,7 +13,7 @@ module Data.Regex.Rules (
   (->>>), (->>),
   this, at,
   inh, syn,
-  rule
+  rule, check
 ) where
 
 import Control.Applicative
@@ -25,7 +25,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.Regex.Generics
 
-type Action  c (f :: * -> *) inh syn = Fix f -> inh -> Map c syn -> (Map c inh, syn)
+type Action  c (f :: * -> *) inh syn = Fix f -> inh -> Map c syn -> (Bool, Map c inh, syn)
 type Rule    c (f :: * -> *) inh syn = (Regex c f, Action c f inh syn)
 type Grammar c (f :: * -> *) inh syn = [Rule c f inh syn]
 
@@ -34,21 +34,21 @@ eval :: (Ord c, Matchable f, Monoid syn)
 eval grammar down term = fromJust $ foldr (<|>) empty $ map evalRule grammar
   where evalRule (regex, action) = do  -- Maybe monad
           (captures :: Map c [Fix f]) <- match regex term
-          let (children, up) = action term down $ M.mapWithKey evalList captures
+          let (ok, children, up) = action term down $ M.mapWithKey evalList captures
               evalList k = foldMap $ eval grammar (children M.! k)
+          guard ok
           return up
 
-
-data ActionState c inh syn = ActionState { _this :: (inh, syn), _rest :: Map c (inh, syn) }
+data ActionState c inh syn = ActionState { _apply :: Bool, _this :: (inh, syn), _rest :: Map c (inh, syn) }
 
 this :: Functor f => ((inh,syn) -> f (inh,syn))
                   -> ActionState c inh syn -> f (ActionState c inh syn)
-this go (ActionState th rs) = (\x -> ActionState x rs) <$> go th
+this go (ActionState ok th rs) = (\x -> ActionState ok x rs) <$> go th
 {-# INLINE this #-}
 
 at :: (Ord c, Functor f) => c -> ((inh,syn) -> f (inh,syn))
                          -> ActionState c inh syn -> f (ActionState c inh syn)
-at k go (ActionState th rs) = (\x -> ActionState th (M.insert k x rs)) <$> go (rs M.! k)
+at k go (ActionState ok th rs) = (\x -> ActionState ok th (M.insert k x rs)) <$> go (rs M.! k)
 {-# INLINE at #-}
 
 inh :: Functor f => (inh -> f inh) -> (inh, syn) -> f (inh, syn)
@@ -65,9 +65,9 @@ stateToAction :: (Ord c, Monoid syn)
               -> Action c f inh syn
 stateToAction nodes st term down up =
   let initialRest = M.fromList $ map (\c -> (c, (down, up M.! c))) nodes  -- down copy rule
-      initial = ActionState (down, mempty) initialRest  -- start with empty
-      ActionState th rs = execState (st term) initial
-   in (M.map fst rs, snd th)
+      initial = ActionState True (down, mempty) initialRest  -- start with empty
+      ActionState ok th rs = execState (st term) initial
+   in (ok, M.map fst rs, snd th)
 
 (->>>) :: Monoid syn
        => (forall k. Regex' k Integer f) -> (Fix f -> State (ActionState Integer inh syn) ())
@@ -78,6 +78,9 @@ stateToAction nodes st term down up =
       => (forall k. Regex' k Integer f) -> State (ActionState Integer inh syn) ()
       -> [Integer] -> Rule Integer f inh syn
 rx ->> st = rx ->>> const st
+
+check :: Bool -> State (ActionState Integer inh syn) ()
+check ok = modify (\(ActionState _ th rs) -> ActionState ok th rs)
 
 
 class RuleBuilder (f :: * -> *) inh syn fn r | fn -> r, r -> f inh syn where

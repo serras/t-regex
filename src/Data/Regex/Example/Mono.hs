@@ -109,23 +109,26 @@ unFix (Fix x) = x
 grammar1 :: Grammar String Tree' () String
 grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
              , \_ _ children ->
-                  ( M.fromList [("l",()),("r",())]
+                  ( False
+                  , M.fromList [("l",()),("r",())]
                   , "(" ++ children ! "l"
                     ++ ")-SPECIAL-("
                     ++ children ! "r" ++ ")" ) )
            , ( Regex $ shallow (Branch' __ ("l" <<- any_) ("r" <<- any_))
              , \(Branch e _ _) _ children ->
-                  ( M.fromList [("l",()),("r",())]
+                  ( True
+                  , M.fromList [("l",()),("r",())]
                   , "(" ++ children ! "l"
                     ++ ")-" ++ show e  ++ "-("
                     ++ children ! "r" ++ ")" ) )
-           , ( Regex $ Leaf_, \_ _ _ -> (M.empty, "leaf") )
+           , ( Regex $ Leaf_, \_ _ _ -> (True, M.empty, "leaf") )
            ]
 
 grammar2 :: Grammar Integer Tree' () (String, Sum Integer)
 grammar2 = [
     rule $ \l r ->
      inj (Branch' 2 (l <<- any_) (r <<- any_)) ->> do
+       -- check False
        (lText,lN) <- use (at l . syn)
        (rText,rN) <- use (at r . syn)
        this.syn._1 .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
@@ -140,3 +143,4 @@ grammar2 = [
        this.syn._1 .= "leaf"
        this.syn._2 .= Sum 1
   ]
+
