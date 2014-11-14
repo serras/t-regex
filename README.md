@@ -263,7 +263,7 @@ grammar = [
        (rText,rN) <- use (at r . syn)
        this.syn._1 .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
        this.syn._2 .= lN + rN
-  , rule $ Leaf_ ->> do
+  , rule $ inj Leaf' ->> do
        this.syn._1 .= "leaf"
        this.syn._2 .= Sum 1
   ]
