@@ -61,7 +61,7 @@ toIntegerVar e = E.PatTypeSig (E.SrcLoc "" 0 0)
 --
 --   One example of use is:
 --
---   > f [rx| iter $ \k -> x <<- inj One <||> y <<- inj (Two (k!)) |] =
+--   > f [rx| iter $ \k -> x <<- inj One <||> y <<- inj (Two (k#)) |] =
 --   >   ... x and y available here with type [Fix f] ...
 --
 --   In many cases, it is useful to define pattern synonyms for
@@ -70,7 +70,7 @@ toIntegerVar e = E.PatTypeSig (E.SrcLoc "" 0 0)
 --   > pattern One_   = Inject One
 --   > pattern Two_ x = Inject (Two_ x)
 --   > 
---   > f [rx| (\k -> x <<- One_ <||> y <<- Two_ (k!))^* |] = ...
+--   > f [rx| (\k -> x <<- One_ <||> y <<- Two_ (k#))^* |] = ...
 rx :: QuasiQuoter
 rx = QuasiQuoter { quotePat  = rPat
                  , quoteExp  = fail "Quasi-quoter only supports patterns"
@@ -144,7 +144,7 @@ toVarM (e,ty) = E.PatTypeSig (E.SrcLoc "" 0 0)
 --
 --   One example of use is:
 --
---   > f [mrx| iter $ \k -> (x :: A) <<- inj One <||> (y :: B) <<- inj (Two (k!)) |] =
+--   > f [mrx| iter $ \k -> (x :: A) <<- inj One <||> (y :: B) <<- inj (Two (k#)) |] =
 --   >   ... x is available with type [Fix f A]
 --   >   ... and y with type [Fix f B]
 mrx :: QuasiQuoter

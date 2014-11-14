@@ -1,6 +1,6 @@
 name:                t-regex
 version:             0.1.0.0
--- synopsis:            
+synopsis:            Matchers and grammars using tree regular expressions
 author:              Alejandro Serrano
 maintainer:          A.SerranoMena@uu.nl
 category:            Data
