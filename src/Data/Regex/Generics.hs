@@ -45,7 +45,8 @@ module Data.Regex.Generics (
 
 import Control.Applicative
 import Control.Monad (guard)
-import Data.Functor.Foldable
+import Data.Foldable as F
+import Data.Functor.Foldable (Fix(..))
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (isJust)
@@ -195,9 +196,21 @@ instance Eq c => MatchG (K1 i c) where
                               return M.empty
   shaG _      _      _ _ = return M.empty
 
-instance MatchG f => MatchG (Rec1 f) where
-  injG (Rec1 r) (Rec1 t) = injG r t
-  shaG (Rec1 r) (Rec1 t) = shaG r t
+instance (Functor f, Foldable f) => MatchG (Rec1 f) where
+  injG (Rec1 rs) (Rec1 ts) i s =
+    F.foldr (<|>) Nothing  -- Get only the first option
+    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
+                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
+                                       _                  -> Nothing)
+                  (Just M.empty)
+                  $ fmap (\t -> match' r t i s) ts) rs
+  shaG (Rec1 rs) (Rec1 ts) i s =
+    F.foldr (<|>) Nothing  -- Get only the first option
+    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
+                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
+                                       _                  -> Nothing)
+                  (Just M.empty)
+                  $ fmap (\t -> match' r t i s) ts) rs
 
 instance MatchG a => MatchG (M1 i c a) where
   injG (M1 r) (M1 t) = injG r t
@@ -214,6 +227,22 @@ instance (MatchG a, MatchG b) => MatchG (a :+: b) where
 instance (MatchG a, MatchG b) => MatchG (a :*: b) where
   injG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> injG r1 t1 i s <*> injG r2 t2 i s
   shaG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> shaG r1 t1 i s <*> shaG r2 t2 i s
+
+instance (Functor f, Foldable f, MatchG g) => MatchG (f :.: g) where
+  injG (Comp1 rs) (Comp1 ts) i s =
+    F.foldr (<|>) Nothing  -- Get only the first option
+    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
+                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
+                                       _                  -> Nothing)
+                  (Just M.empty)
+                  $ fmap (\t -> injG r t i s) ts) rs
+  shaG (Comp1 rs) (Comp1 ts) i s =
+    F.foldr (<|>) Nothing  -- Get only the first option
+    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
+                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
+                                       _                  -> Nothing)
+                  (Just M.empty)
+                  $ fmap (\t -> shaG r t i s) ts) rs
 
 
 class With f fn r | fn -> r where

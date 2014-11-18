@@ -10,17 +10,21 @@
 -- | Example of tree regular expressions over a regular data type.
 --   Click on @Source@ to view the code.
 module Data.Regex.Example.Mono (
-  -- * Data type definition
+  -- * Data type definitions
   Tree'(..), Tree,
+  Rose'(..), Rose,
   -- ** Useful pattern synonyms
   pattern Leaf, pattern Branch,
+  pattern Rose,
   -- ** Some 'Tree' values
   aTree1, aTree2, aTree3,
+  -- ** Some 'Rose' values
+  aRose1, aRose2,
   -- * Tree regular expressions
   -- ** Useful pattern synonyms
   pattern Leaf_, pattern Branch_,
   -- ** Some stand-alone expressions
-  rTree1, rTree2, rTree3,
+  rTree1, rTree2, rTree3, rRose1,
   -- ** Using 'with' views
   eWith1, eWith2,
   -- ** Using the 'rx' quasi-quoter
@@ -45,14 +49,25 @@ data Tree' f = Leaf' | Branch' { elt :: Int, left :: f, right :: f }
 -- | Closes the data type by creating its fix-point.
 type Tree = Fix Tree'
 
+-- | The pattern functor for rose trees.
+data Rose' f = Rose' { value :: Int, child :: [f] }
+  deriving (Generic1, Show)
+-- | Closes the data type by creating its fix-point.
+type Rose = Fix Rose'
+
 -- | Pattern synonym for the 'Leaf' constructor inside 'Fix'.
 pattern Leaf = Fix Leaf'
 -- | Pattern synonym for the 'Branch' constructor inside 'Fix'.
 pattern Branch n l r = Fix (Branch' n l r)
+-- | Pattern synonym for the 'Rose' constructor inside 'Fix'.
+pattern Rose v c = Fix (Rose' v c)
 
 instance Show Tree where
   show (Fix Leaf') = "Leaf"
   show (Fix (Branch' n t1 t2)) = "(Branch " ++ show n ++ " " ++ show t1 ++ " " ++ show t2 ++ ")"
+
+instance Show Rose where
+  show (Fix (Rose' n c)) = show n ++ show c
 
 aTree1 :: Tree
 aTree1 = Branch 2 (Branch 3 Leaf Leaf) Leaf
@@ -62,6 +77,12 @@ aTree2 = Branch 2 (Branch 2 Leaf Leaf) Leaf
 
 aTree3 :: Tree
 aTree3 = Branch 2 Leaf Leaf
+
+aRose1 :: Rose
+aRose1 = Rose 2 [Rose 2 [], Rose 2 []]
+
+aRose2 :: Rose
+aRose2 = Rose 2 [Rose 2 [], Rose 2 [Rose 3 []]]
 
 rTree1 :: Regex String Tree'
 rTree1 = Regex $
@@ -82,6 +103,9 @@ pattern Leaf_         = Inject Leaf'
 
 rTree3 :: Integer -> Integer -> Regex Integer Tree'
 rTree3 c1 c2 = Regex ( (\k -> c1 <<- Branch_ 2 (k#) (k#) <||> c2 <<- Leaf_)^* )
+
+rRose1 :: Regex String Rose'
+rRose1 = Regex $ iter $ \k -> capture "x" $ inj (Rose' 2 [square k])
 
 eWith1 :: Tree -> [Tree]
 eWith1 (with rTree2 -> Just e) = e
