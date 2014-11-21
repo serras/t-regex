@@ -7,11 +7,12 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 -- | Tree regular expressions over regular data types.
 module Data.Regex.Generics (
   -- * Base types
   Regex(Regex),
-  Regex'(Inject,Shallow),
+  Regex'(Inject),
   Fix(..),
   
   -- * Constructors
@@ -23,7 +24,7 @@ module Data.Regex.Generics (
   -- ** Whole language
   any_,
   -- ** Injection
-  inj, shallow, __,
+  inj, __,
   -- ** Holes/squares
   square, var, (#),
   -- ** Alternation
@@ -44,13 +45,16 @@ module Data.Regex.Generics (
 ) where
 
 import Control.Applicative
+import Control.Exception
 import Control.Monad (guard)
 import Data.Foldable as F
 import Data.Functor.Foldable (Fix(..))
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.Maybe (isJust)
+import Data.Typeable
 import GHC.Generics
+import System.IO.Unsafe (unsafePerformIO)
 
 -- | The basic data type for tree regular expressions.
 --
@@ -58,15 +62,10 @@ import GHC.Generics
 --   * 'c' is the type of capture identifiers.
 --   * 'f' is the pattern functor over which regular expressions match.
 --     In tree regular expression jargon, expresses the set of constructors for nodes.
---
--- Note that we differentiate between constructors fully or shallow injected.
--- For fully injected constructors, we check the information inside those fields
--- which are not of type 'f'. With shallow ones, those are not checked.
 data Regex' k c (f :: * -> *)
   = Empty
   | Any
-  | Inject  (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected full constructors.
-  | Shallow (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected shallow constructors.
+  | Inject  (f (Regex' k c f))  -- ^ Useful for defining pattern synonyms for injected constructors.
   | Square k
   | Choice (Regex' k c f) (Regex' k c f)
   | Concat (k -> Regex' k c f) (Regex' k c f)
@@ -83,23 +82,20 @@ none = empty_
 any_ :: Regex' k c f
 any_ = Any
 
--- | Fully injects a constructor as a regular expression.
+-- | Injects a constructor as a regular expression.
 -- That is, specifies a tree regular expression whose root is given by a constructor
 -- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
--- When matching, fields of types other than 'f' are checked for equality.
+-- When matching, fields of types other than 'f' are checked for equality,
+-- except when using '__' as the value.
 inj :: f (Regex' k c f) -> Regex' k c f
 inj = Inject
 
--- | Shallow injects a constructor as a regular expression.
--- That is, specifies a tree regular expression whose root is given by a constructor
--- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
--- When matching, fields of types other than 'f' are not checked.
-shallow :: f (Regex' k c f) -> Regex' k c f
-shallow = Shallow
-
--- | Useful function to combine with 'shallow' and match anything in a non-'f' field.
+-- | Serves as a placeholder for any value in a non-'f'-typed position.
 __ :: a
-__ = error "This element should not be checked"
+__ = throw DoNotCheckThisException
+
+data DoNotCheckThisException = DoNotCheckThisException deriving (Show, Typeable)
+instance Exception DoNotCheckThisException
 
 -- | Indicates the position of a hole in a regular expression.
 square, var :: k -> Regex' k c f
@@ -171,30 +167,28 @@ match' :: (Ord c, Matchable f, Alternative m)
 match' Empty             _ _ _ = Nothing
 match' Any               _ _ _ = Just M.empty
 match' (Inject r)  (Fix t) i s = injG (from1 r) (from1 t) i s
-match' (Shallow r) (Fix t) i s = shaG (from1 r) (from1 t) i s
 match' (Square n)        t i s = let Just r = lookup n s in match' r t i s
 match' (Choice r1 r2)    t i s = match' r1 t i s <|> match' r2 t i s
 match' (Concat r1 r2)    t i s = match' (r1 i) t (i+1) ((i,r2):s)
 match' (Capture c r)     t i s = M.insertWith (<|>) c (pure t) <$> match' r t i s
 
 class MatchG f where
-  injG, shaG :: (Ord c, Matchable g, Alternative m)
-             => f (Regex' Integer c g) -> f (Fix g)
-             -> Integer -> [(Integer, Regex' Integer c g)]
-             -> Maybe (Map c (m (Fix g)))
+  injG :: (Ord c, Matchable g, Alternative m)
+       => f (Regex' Integer c g) -> f (Fix g)
+       -> Integer -> [(Integer, Regex' Integer c g)]
+       -> Maybe (Map c (m (Fix g)))
 
 instance MatchG U1 where
   injG _ _ _ _ = Just M.empty
-  shaG _ _ _ _ = Just M.empty
 
 instance MatchG Par1 where
   injG (Par1 r) (Par1 t) = match' r t
-  shaG (Par1 r) (Par1 t) = match' r t
 
 instance Eq c => MatchG (K1 i c) where
-  injG (K1 r) (K1 t) _ _ = do guard (r == t)
-                              return M.empty
-  shaG _      _      _ _ = return M.empty
+  injG (K1 r) (K1 t) _ _ = unsafePerformIO $
+                             catch (evaluate $ do guard (r == t) -- Maybe monad
+                                                  return M.empty)
+                                   (\(_ :: DoNotCheckThisException) -> return $ Just M.empty)
 
 instance (Functor f, Foldable f) => MatchG (Rec1 f) where
   injG (Rec1 rs) (Rec1 ts) i s =
@@ -204,29 +198,17 @@ instance (Functor f, Foldable f) => MatchG (Rec1 f) where
                                        _                  -> Nothing)
                   (Just M.empty)
                   $ fmap (\t -> match' r t i s) ts) rs
-  shaG (Rec1 rs) (Rec1 ts) i s =
-    F.foldr (<|>) Nothing  -- Get only the first option
-    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
-                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
-                                       _                  -> Nothing)
-                  (Just M.empty)
-                  $ fmap (\t -> match' r t i s) ts) rs
 
 instance MatchG a => MatchG (M1 i c a) where
   injG (M1 r) (M1 t) = injG r t
-  shaG (M1 r) (M1 t) = shaG r t
 
 instance (MatchG a, MatchG b) => MatchG (a :+: b) where
   injG (L1 r) (L1 t) i s = injG r t i s
   injG (R1 r) (R1 t) i s = injG r t i s
   injG _      _      _ _ = Nothing
-  shaG (L1 r) (L1 t) i s = shaG r t i s
-  shaG (R1 r) (R1 t) i s = shaG r t i s
-  shaG _      _      _ _ = Nothing
 
 instance (MatchG a, MatchG b) => MatchG (a :*: b) where
   injG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> injG r1 t1 i s <*> injG r2 t2 i s
-  shaG (r1 :*: r2) (t1 :*: t2) i s = M.unionWith (<|>) <$> shaG r1 t1 i s <*> shaG r2 t2 i s
 
 instance (Functor f, Foldable f, MatchG g) => MatchG (f :.: g) where
   injG (Comp1 rs) (Comp1 ts) i s =
@@ -236,13 +218,6 @@ instance (Functor f, Foldable f, MatchG g) => MatchG (f :.: g) where
                                        _                  -> Nothing)
                   (Just M.empty)
                   $ fmap (\t -> injG r t i s) ts) rs
-  shaG (Comp1 rs) (Comp1 ts) i s =
-    F.foldr (<|>) Nothing  -- Get only the first option
-    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
-                                       (Just m1, Just m2) -> Just (M.unionWith (<|>) m1 m2)
-                                       _                  -> Nothing)
-                  (Just M.empty)
-                  $ fmap (\t -> shaG r t i s) ts) rs
 
 
 class With f fn r | fn -> r where

@@ -10,6 +10,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 -- | Tree regular expressions over mutually recursive regular data types.
 module Data.Regex.MultiGenerics (
   -- * Base types
@@ -25,7 +26,7 @@ module Data.Regex.MultiGenerics (
   -- ** Whole language
   any_,
   -- ** Injection
-  inj, shallow, __,
+  inj, __,
   -- ** Holes/squares
   square, var, (!),
   -- ** Alternation
@@ -50,10 +51,13 @@ module Data.Regex.MultiGenerics (
 ) where
 
 import Control.Applicative
+import Control.Exception
 import Control.Monad (MonadPlus, mzero, guard)
 import Data.Map (Map)
 import qualified Data.Map as M
 import Data.MultiGenerics
+import Data.Typeable
+import System.IO.Unsafe (unsafePerformIO)
 
 import Unsafe.Coerce -- :(
 
@@ -67,7 +71,6 @@ data Regex' (s :: k -> *) c (f :: (k -> *) -> k -> *) (ix :: k) where
   Empty   :: Regex' s c f ix
   Any     :: Regex' s c f ix
   Inject  :: f (Regex' s c f) ix -> Regex' s c f ix
-  Shallow :: f (Regex' s c f) ix -> Regex' s c f ix
   Square  :: s ix -> Regex' s c f ix
   Choice  :: Regex' s c f ix -> Regex' s c f ix -> Regex' s c f ix
   Concat  :: (s xi -> Regex' s c f ix) -> Regex' s c f xi -> Regex' s c f ix
@@ -84,23 +87,20 @@ none = empty_
 any_ :: Regex' k c f ix
 any_ = Any
 
--- | Fully injects a constructor as a regular expression.
+-- | Injects a constructor as a regular expression.
 -- That is, specifies a tree regular expression whose root is given by a constructor
 -- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
--- When matching, fields of types other than 'f' are checked for equality.
+-- When matching, fields of types other than 'f' are checked for equality,
+-- except when using '__' as the value.
 inj :: f (Regex' k c f) ix -> Regex' k c f ix
 inj = Inject
 
--- | Shallow injects a constructor as a regular expression.
--- That is, specifies a tree regular expression whose root is given by a constructor
--- of the corresponding pattern functor, and whose nodes are other tree regular expressions.
--- When matching, fields of types other than 'f' are not checked.
-shallow :: f (Regex' k c f) ix -> Regex' k c f ix
-shallow = Shallow
-
--- | Useful function to combine with 'shallow' and match anything in a non-'f' field.
+-- | Serves as a placeholder for any value in a non-'f'-typed position.
 __ :: a
-__ = error "This element should not be checked"
+__ = throw DoNotCheckThisException
+
+data DoNotCheckThisException = DoNotCheckThisException deriving (Show, Typeable)
+instance Exception DoNotCheckThisException
 
 -- | Indicates the position of a hole in a regular expression.
 square, var :: k ix -> Regex' k c f ix
@@ -171,7 +171,6 @@ matches' :: (Generic1m f, MatchG (Rep1m f))
 matches' Empty             _ _ _ = False
 matches' Any               _ _ _ = True
 matches' (Inject r)  (Fix t) i s = injesG (from1k r) (from1k t) i s
-matches' (Shallow r) (Fix t) i s = shaesG (from1k r) (from1k t) i s
 matches' (Square (W n))    t i s = let Just r = unsafeCoerce (lookup n s) in matches' r t i s
 matches' (Choice r1 r2)    t i s = matches' r1 t i s || matches' r2 t i s
 matches' (Concat r1 r2)    t i s = matches' (r1 (W i)) t (i+1) ((i, unsafeCoerce r2):s)
@@ -186,76 +185,63 @@ match' :: (Ord c, Generic1m f, MatchG (Rep1m f), Alternative m, SingI ix)
 match' Empty             _ _ _ = Nothing
 match' Any               _ _ _ = Just M.empty
 match' (Inject r)  (Fix t) i s = injG (from1k r) (from1k t) i s
-match' (Shallow r) (Fix t) i s = shaG (from1k r) (from1k t) i s
 match' (Square (W n))    t i s = let Just r = unsafeCoerce (lookup n s) in match' r t i s
 match' (Choice r1 r2)    t i s = match' r1 t i s <|> match' r2 t i s
 match' (Concat r1 r2)    t i s = match' (r1 (W i)) t (i+1) ((i, unsafeCoerce r2):s)
 match' (Capture c r)     t i s = M.insertWith (<|>) c (pure (Result sing t)) <$> match' r t i s
 
 class MatchG (f :: (k -> *) -> k -> *) where
-  injesG, shaesG :: (Generic1m g, MatchG (Rep1m g))
-                 => f (Regex' WrappedInteger c g) ix
-                 -> f (Fix g) ix
-                 -> Integer
-                 -> [(Integer, forall xi. Regex' WrappedInteger c g xi)]
-                 -> Bool
-  injG, shaG :: (Ord c, Generic1m g, MatchG (Rep1m g), Alternative m, SingI ix)
-             => f (Regex' WrappedInteger c g) ix
-             -> f (Fix g) ix
-             -> Integer
-             -> [(Integer, forall xi. Regex' WrappedInteger c g xi)]
-             -> Maybe (Map c (m (Result g)))
+  injesG :: (Generic1m g, MatchG (Rep1m g))
+         => f (Regex' WrappedInteger c g) ix
+         -> f (Fix g) ix
+         -> Integer
+         -> [(Integer, forall xi. Regex' WrappedInteger c g xi)]
+         -> Bool
+  injG :: (Ord c, Generic1m g, MatchG (Rep1m g), Alternative m, SingI ix)
+       => f (Regex' WrappedInteger c g) ix
+       -> f (Fix g) ix
+       -> Integer
+       -> [(Integer, forall xi. Regex' WrappedInteger c g xi)]
+       -> Maybe (Map c (m (Result g)))
 
 instance MatchG U1m where
   injesG _ _ _ _ = True
-  shaesG _ _ _ _ = True
   injG   _ _ _ _ = Just M.empty
-  shaG   _ _ _ _ = Just M.empty
 
 instance SingI xi => MatchG (Par1m xi) where
   injesG (Par1m r) (Par1m t) = matches' r t
-  shaesG (Par1m r) (Par1m t) = matches' r t
   injG   (Par1m r) (Par1m t) = match' r t
-  shaG   (Par1m r) (Par1m t) = match' r t
 
 instance (MatchG f, SingI xi) => MatchG (Rec1m f xi) where
   injesG (Rec1m r) (Rec1m t) = injesG r t
-  shaesG (Rec1m r) (Rec1m t) = shaesG r t
   injG   (Rec1m r) (Rec1m t) = injG r t
-  shaG   (Rec1m r) (Rec1m t) = shaG r t
 
 instance Eq c => MatchG (K1m i c) where
-  injesG (K1m r) (K1m t) _ _ = r == t
-  shaesG (K1m _) (K1m _) _ _ = True
-  injG   (K1m r) (K1m t) _ _ = do guard (r == t)
-                                  return M.empty
-  shaG   (K1m _) (K1m _) _ _ = return M.empty
+  injesG (K1m r) (K1m t) _ _ =
+    unsafePerformIO $
+      catch (evaluate $ r == t)
+            (\(_ :: DoNotCheckThisException) -> return True)
+  injG   (K1m r) (K1m t) _ _ =
+    unsafePerformIO $
+      catch (evaluate $ do guard (r == t) -- Maybe monad
+                           return M.empty)
+            (\(_ :: DoNotCheckThisException) -> return $ Just M.empty)
 
 instance (MatchG a, MatchG b) => MatchG (a :++: b) where
   injesG (L1m r) (L1m t) i s = injesG r t i s
   injesG (R1m r) (R1m t) i s = injesG r t i s
   injesG _       _       _ _ = False
-  shaesG (L1m r) (L1m t) i s = shaesG r t i s
-  shaesG (R1m r) (R1m t) i s = shaesG r t i s
-  shaesG _       _       _ _ = False
   injG   (L1m r) (L1m t) i s = injG r t i s
   injG   (R1m r) (R1m t) i s = injG r t i s
   injG   _       _       _ _ = Nothing
-  shaG   (L1m r) (L1m t) i s = shaG r t i s
-  shaG   (R1m r) (R1m t) i s = shaG r t i s
-  shaG   _       _       _ _ = Nothing
 
 instance (MatchG a, MatchG b) => MatchG (a :**: b) where
   injesG (r1 :**: r2) (t1 :**: t2) i s = injesG r1 t1 i s && injesG r2 t2 i s
-  shaesG (r1 :**: r2) (t1 :**: t2) i s = shaesG r1 t1 i s && shaesG r2 t2 i s
   injG   (r1 :**: r2) (t1 :**: t2) i s = M.unionWith (<|>) <$> injG r1 t1 i s <*> injG r2 t2 i s
-  shaG   (r1 :**: r2) (t1 :**: t2) i s = M.unionWith (<|>) <$> shaG r1 t1 i s <*> shaG r2 t2 i s
 
 instance (MatchG f, SingI xi) => MatchG (Tag1m f xi) where
   injesG (Tag1m r) (Tag1m t) = injesG r t
-  shaesG (Tag1m r) (Tag1m t) = shaesG r t
   injG   (Tag1m r) (Tag1m t) = injG r t
-  shaG   (Tag1m r) (Tag1m t) = shaG r t
 
 -- | Combination of a value of the data type expressed by the family of
 --   pattern functors 'f' at index 'ix', alongside with a singleton

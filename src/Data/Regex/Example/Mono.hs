@@ -30,7 +30,7 @@ module Data.Regex.Example.Mono (
   -- ** Using the 'rx' quasi-quoter
   eWith2Bis, eWith3, eWith4,
   -- * Grammar and rules
-  grammar1, grammar2
+  grammar1, grammar2, grammar3
 ) where
 
 import Control.Lens hiding (at, (#), children)
@@ -70,7 +70,7 @@ instance Show Rose where
   show (Fix (Rose' n c)) = show n ++ show c
 
 aTree1 :: Tree
-aTree1 = Branch 2 (Branch 3 Leaf Leaf) Leaf
+aTree1 = Branch 2 (Branch 3 (Branch 2 (Branch 4 Leaf Leaf) Leaf) Leaf) Leaf
 
 aTree2 :: Tree
 aTree2 = Branch 2 (Branch 2 Leaf Leaf) Leaf
@@ -124,7 +124,7 @@ eWith3 [rx| x <<- Leaf_ |] = x
 eWith3 _                   = error "What?"
 
 eWith4 :: Tree -> [Int]
-eWith4 [rx| (\k -> x <<- shallow (Branch' __ (k#) (k#)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
+eWith4 [rx| (\k -> x <<- inj (Branch' __ (k#) (k#)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
 eWith4 _  = error "What?"
 
 unFix :: Fix f -> f (Fix f)
@@ -133,12 +133,12 @@ unFix (Fix x) = x
 grammar1 :: Grammar String Tree' () String
 grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
              , \_ _ children ->
-                  ( False
+                  ( True
                   , M.fromList [("l",()),("r",())]
                   , "(" ++ children ! "l"
                     ++ ")-SPECIAL-("
                     ++ children ! "r" ++ ")" ) )
-           , ( Regex $ shallow (Branch' __ ("l" <<- any_) ("r" <<- any_))
+           , ( Regex $ inj (Branch' __ ("l" <<- any_) ("r" <<- any_))
              , \(Branch e _ _) _ children ->
                   ( True
                   , M.fromList [("l",()),("r",())]
@@ -158,7 +158,7 @@ grammar2 = [
        this.syn._1 .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
        this.syn._2 .= lN + rN
   , rule $ \l r ->
-     shallow (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
+     inj (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
        (lText,lN) <- use (at l . syn)
        (rText,rN) <- use (at r . syn)
        this.syn._1 .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
@@ -168,3 +168,27 @@ grammar2 = [
        this.syn._2 .= Sum 1
   ]
 
+grammar3 :: Grammar Integer Tree' Char (String, Sum Integer)
+grammar3 = [
+    rule $ \l r ->
+     inj (Branch' 2 (l <<- any_) (r <<- any_)) ->> do
+       special <- use (this.inh)
+       at l . inh .= succ special
+       at r . inh .= succ special
+       -- check False
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       if lText == "leaf" && rText == "leaf"
+          then this.syn._1 .= "leaves"
+          else this.syn._1 .= "(" ++ lText ++ ")-" ++ [special] ++ "-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
+  , rule $ \l r ->
+     inj (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
+       (lText,lN) <- use (at l . syn)
+       (rText,rN) <- use (at r . syn)
+       this.syn._1 .= "(" ++ lText ++ ")-" ++ show e ++ "-(" ++ rText ++ ")"
+       this.syn._2 .= lN + rN
+  , rule $ Leaf_ ->> do
+       this.syn._1 .= "leaf"
+       this.syn._2 .= Sum 1
+  ]
