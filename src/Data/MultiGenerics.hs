@@ -11,6 +11,7 @@ module Data.MultiGenerics where
 -- | Multirec-style fix-point, indexed by data kind.
 newtype Fix (f :: (k -> *) -> k -> *) (ix :: k) = Fix { unFix :: f (Fix f) ix }
 
+{-
 -- | The singleton kind-indexed data family. Taken from the @singletons@ package.
 data family Sing (a :: k)
 
@@ -19,11 +20,16 @@ class SingI (a :: k) where
   -- | Produce the singleton explicitly. You will likely need the @ScopedTypeVariables@
   -- extension to use this method the way you want.
   sing :: Sing a
+-}
 
 -- | Convert a pattern functor to a readable 'String'.
 class ShowM (f :: k -> *) where
   -- | An index-independent way to show a value.
   showM :: f ix -> String
+
+-- | We have equality for each instantiation of the pattern functor.
+class EqM (f :: k -> *) where
+  eqM :: f ix -> f xi -> Bool
 
 -- | Representable types of kind * -> *.
 -- This class is derivable in GHC with the DeriveGeneric flag on.

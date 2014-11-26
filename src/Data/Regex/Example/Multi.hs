@@ -24,9 +24,9 @@ module Data.Regex.Example.Multi (
   -- ** Some stand-alone expressions
   rBis1, rBis2, rBis3, rBis4,
   -- ** Using 'with' views
-  cBis1, eBis1,
+  cBis1, eBis1 --,
   -- ** Using the 'mrx' quasi-quoter
-  eBis2
+  -- eBis2
 ) where
 
 import Data.Regex.MultiGenerics
@@ -34,6 +34,8 @@ import Data.MultiGenerics
 import Data.Regex.TH
 
 data Ty = One | Two
+
+{-
 data instance Sing (a :: Ty) where
   SOne :: Sing One
   STwo :: Sing Two
@@ -43,6 +45,7 @@ instance SingI One where
   sing = SOne
 instance SingI Two where
   sing = STwo
+-}
 
 data Bis f ix where
   NilOne'  :: Bis f One
@@ -58,6 +61,10 @@ instance ShowM (Fix Bis) where
   showM (Fix (ConsOne' n r)) = "(ConsOne " ++ show n ++ " " ++ showM r ++ ")"
   showM (Fix NilTwo')        = "NilTwo"
   showM (Fix (ConsTwo' c r)) = "(ConsTwo " ++ show c ++ " " ++ showM r ++ ")"
+instance Show (Fix Bis One) where
+  show = showM
+instance Show (Fix Bis Two) where
+  show = showM
 
 pattern NilOne       = Fix NilOne'
 pattern ConsOne x xs = Fix (ConsOne' x xs)
@@ -88,8 +95,8 @@ aBis1 = NilOne
 aBis2 :: FixOne
 aBis2 = ConsOne 1 (ConsTwo 'a' NilOne)
 
-rBis1 :: Regex Char Bis One
-rBis1 = Regex $ capture 'a' $ inj NilOne'
+rBis1 :: Regex (Wrap Char) Bis One
+rBis1 = Regex $ capture ('a'?) $ inj NilOne'
 
 rBis2 :: Regex c Bis One
 rBis2 = Regex $ inj (ConsOne' 2 (inj NilTwo'))
@@ -100,12 +107,15 @@ rBis3 = Regex $ inj (ConsOne' 2 (inj (ConsTwo' 'a' (inj NilOne'))))
 rBis4 :: Regex c Bis One
 rBis4 = Regex $ inj NilOne' <||> inj NilOne'
 
-cBis1 :: Return One -> Regex Integer Bis One
-cBis1 x = Regex $ (x ?? (sing :: Sing One)) <<- inj NilOne'
+cBis1 :: Wrap Integer One -> Regex (Wrap Integer) Bis One
+cBis1 x = Regex $ x <<- inj NilOne'
+
 
 eBis1 :: FixOne -> [FixOne]
 eBis1 (with cBis1 -> Just x) = x
 eBis1 _                      = error "What?"
 
+{-
 eBis2 :: FixOne -> [FixOne]
 eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x
+-}
