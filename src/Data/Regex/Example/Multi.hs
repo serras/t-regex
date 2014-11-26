@@ -115,7 +115,5 @@ eBis1 :: FixOne -> [FixOne]
 eBis1 (with cBis1 -> Just x) = x
 eBis1 _                      = error "What?"
 
-{-
 eBis2 :: FixOne -> [FixOne]
 eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x
--}

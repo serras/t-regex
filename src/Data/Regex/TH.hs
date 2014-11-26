@@ -97,12 +97,7 @@ mrPat s = case parseExp ("(" ++ s ++ ")") of
                                                        (ConP 'Just [TupP $ map (toPat . E.PVar . fst) vs])
 
 getUnboundVarsM :: E.Exp -> (E.Exp, [(E.Name, E.Type)])
-getUnboundVarsM (E.ExpTypeSig l v@(E.Var (E.UnQual n)) ty) 
-                                     = ( E.App (E.App (E.Var (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "??"))) v)
-                                               (E.ExpTypeSig l (E.Var (E.Qual (E.ModuleName "Data.MultiGenerics") (E.Symbol "sing")))
-                                                               (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.MultiGenerics") (E.Symbol "Sing")))
-                                                                        ty))
-                                       , [(n,ty)])
+getUnboundVarsM (E.ExpTypeSig _ v@(E.Var (E.UnQual n)) ty) = (v, [(n,ty)])
 getUnboundVarsM v@(E.Var _)          = (v, [])
 getUnboundVarsM (E.App e1 e2)        = let (r1, m1) = getUnboundVarsM e1
                                            (r2, m2) = getUnboundVarsM e2
@@ -133,7 +128,9 @@ getFreeVarsM (_:ns)                 = getFreeVarsM ns
 toVarM :: (E.Name, E.Type) -> E.Pat
 toVarM (e,ty) = E.PatTypeSig (E.SrcLoc "" 0 0)
                              (E.PVar e)
-                             (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "Return"))) ty)
+                             (E.TyApp (E.TyApp (E.TyCon (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Symbol "Wrap")))
+                                               (E.TyCon (E.Qual (E.ModuleName "Prelude") (E.Ident "Integer"))))
+                                      ty)
 
 -- | Builds a pattern for a matching a tree regular expression over
 --   a family of regular data type. Those variables not bound are
