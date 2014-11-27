@@ -13,6 +13,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeFamilies #-}
 -- | Attribute grammars with regular expression matching.
 module Data.Regex.MultiRules (
   -- * Children maps
@@ -23,10 +24,10 @@ module Data.Regex.MultiRules (
   Action, Rule, Grammar,
   eval,
   -- * Nice syntax for defining rules
-  {- rule,
+  rule,
   -- ** Combinators
   check,
-  (->>>), (->>), -}
+  (->>>), (->>),
   -- ** Special lenses
   this, at,
   inh, syn
@@ -39,6 +40,7 @@ import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.MultiGenerics
 import Data.Regex.MultiGenerics
+import GHC.Exts (Constraint)
 
 import Unsafe.Coerce
 
@@ -88,7 +90,7 @@ eval grammar down term = fromJust $ foldr (<|>) empty $ map evalRule grammar
           return up
 
 
-data InhAndSyn inh syn ix = InhAndSyn (inh ix) [syn ix]
+data InhAndSyn inh syn ix = InhAndSyn (inh ix) (syn ix)
 data ActionState c inh syn ix = ActionState { _apply :: Bool
                                             , _this :: InhAndSyn inh syn ix
                                             , _rest :: Children c (InhAndSyn inh syn)
@@ -110,45 +112,62 @@ at k go (ActionState ok th rs) = (\x -> ActionState ok th (insertChild k [x] rs)
 
 -- | Lens for the inherited attributes of a node.
 --   Use only as getter with 'this' and as setter with 'at'.
-inh :: Functor f => (inh ix -> f (inh ix))
+inh :: (Functor f) => (inh ix -> f (inh ix))
     -> InhAndSyn inh syn ix -> f (InhAndSyn inh syn ix)
 inh go (InhAndSyn i s) = (\x -> InhAndSyn x s) <$> go i
 {-# INLINE inh #-}
 
 -- | Lens the inherited synthesized attributes of a node.
 --   Use only as setter with 'this' and as getter with 'at'.
-syn :: (Monoid (syn ix), Functor f) => (syn ix -> f (syn ix))
+syn :: (Functor f) => (syn ix -> f (syn ix))
     -> InhAndSyn inh syn ix -> f (InhAndSyn inh syn ix)
-syn go (InhAndSyn i s) = (\x -> InhAndSyn i [x]) <$> go (fold s)
+syn go (InhAndSyn i s) = (\x -> InhAndSyn i x) <$> go s
 {-# INLINE syn #-}
 
 data IxList (c :: k -> *) :: [k] -> * where
   IxNil  :: IxList c '[]
   IxCons :: c ix -> IxList c rest -> IxList c (ix ': rest)
 
-stateToAction :: EqM c => IxList c ixs
+type family IxListMonoid (c :: k -> *) (ixs :: [k]) :: Constraint where
+  IxListMonoid c '[] = ()
+  IxListMonoid c (ix ': rest) = (Monoid (c ix), IxListMonoid c rest)
+
+stateToAction :: (EqM c, IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn ixs)
+              => IxList c ixs
               -> (Fix f ix -> State (ActionState c inh syn ix) ())
-              -> Action c f inh syn ix
-stateToAction nodes st term down up = _
-{-
-stateToAction nodes st term down up =
-  let initialRest = M.fromList $ map (\c -> (c, (down, up M.! c))) nodes  -- down copy rule
-      initial = ActionState True (down, mempty) initialRest  -- start with empty
-      ActionState ok th rs = execState (st term) initial
-   in (ok, M.map fst rs, snd th)
--}
+              -> Action c f inh syn ix  -- Fix f ix -> inh ix -> Children c syn -> (Bool, Children c inh, syn ix)
+stateToAction nodes st term down up = 
+  let initialSyn = initialRest nodes up
+      initial = ActionState True (InhAndSyn down mempty) initialSyn
+      ActionState ok (InhAndSyn _ thisUp) rs = execState (st term) initial
+   in (ok, finalDown nodes rs, thisUp)
+
+initialRest :: (EqM c, IxListMonoid inh ixs, IxListMonoid syn ixs)
+            => IxList c ixs -> Children c syn -> Children c (InhAndSyn inh syn)
+initialRest IxNil _ = []
+initialRest (IxCons c rest) children =
+  Child c [InhAndSyn mempty (fold $ lookupChild c children)] : initialRest rest children
+
+finalDown :: EqM c => IxList c ixs -> Children c (InhAndSyn inh syn) -> Children c inh
+finalDown IxNil _ = []
+finalDown (IxCons c rest) children =
+  Child c [ firstInh $ lookupChild c children ] : finalDown rest children
+  where firstInh [InhAndSyn s _] = s
+        firstInh _ = error "This should never happen"
 
 -- | Separates matching and attribute calculation on a rule.
 --   The action should take as extra parameter the node which was matched.
-(->>>) :: forall (c :: k -> *) f (ix :: k) inh syn (ixs :: [k])
-        . (forall c. Regex' c (Wrap Integer) f ix)
+(->>>) :: forall f (ix :: k) inh syn (ixs :: [k])
+        . (IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn ixs)
+       => (forall c. Regex' c (Wrap Integer) f ix)
        -> (Fix f ix -> State (ActionState (Wrap Integer) inh syn ix) ())
        -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
 (rx ->>> st) nodes = Rule (Regex rx) (stateToAction nodes st)
 
 -- | Separates matching and attribute calculation on a rule.
-(->>) :: forall (c :: k -> *) f (ix :: k) inh syn (ixs :: [k])
-       . (forall c. Regex' c (Wrap Integer) f ix)
+(->>) :: forall f (ix :: k) inh syn (ixs :: [k])
+       . (IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn ixs)
+      => (forall c. Regex' c (Wrap Integer) f ix)
       -> State (ActionState (Wrap Integer) inh syn ix) ()
       -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
 (rx ->> st) nodes = (rx ->>> const st) nodes
@@ -181,32 +200,43 @@ instance RuleBuilder f inh syn
   rule r = r (IxNil)
 
 instance RuleBuilder f inh syn
-              (Wrap Integer ix1 -> IxList (Wrap Integer) '[ix1] -> Rule (Wrap Integer) f inh syn)
+              (Wrap Integer ix1
+               -> IxList (Wrap Integer) '[ix1] -> Rule (Wrap Integer) f inh syn)
               (Rule (Wrap Integer) f inh syn) where
   rule r = r (Wrap 1) (IxCons (Wrap 1) IxNil)
 
-{-
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              (Integer -> Integer -> [Integer] -> Rule Integer f inh syn)
-              (Rule Integer f inh syn) where
-  rule r = r 1 2 [1,2]
+instance RuleBuilder f inh syn
+              (Wrap Integer ix1
+               -> Wrap Integer ix2
+               -> IxList (Wrap Integer) '[ix1, ix2] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (Wrap 1) (Wrap 2) (IxCons (Wrap 1) ((IxCons (Wrap 2)) IxNil))
 
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
-              (Rule Integer f inh syn) where
-  rule r = r 1 2 3 [1,2,3]
+instance RuleBuilder f inh syn
+              (Wrap Integer ix1
+              -> Wrap Integer ix2
+              -> Wrap Integer ix3
+              -> IxList (Wrap Integer) '[ix1, ix2, ix3] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) IxNil)))
 
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
-              (Rule Integer f inh syn) where
-  rule r = r 1 2 3 4 [1,2,3,4]
+instance RuleBuilder f inh syn
+              (Wrap Integer ix1
+              -> Wrap Integer ix2
+              -> Wrap Integer ix3
+              -> Wrap Integer ix4
+              -> IxList (Wrap Integer) '[ix1, ix2, ix3, ix4] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (Wrap 4)
+             (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) (IxCons (Wrap 4) IxNil))))
 
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
-              (Rule Integer f inh syn) where
-  rule r = r 1 2 3 4 5 [1,2,3,4,5]
--}
+instance RuleBuilder f inh syn
+              (Wrap Integer ix1
+              -> Wrap Integer ix2
+              -> Wrap Integer ix3
+              -> Wrap Integer ix4
+              -> Wrap Integer ix5
+              -> IxList (Wrap Integer) '[ix1, ix2, ix3, ix4, ix5] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (Wrap 4) (Wrap 5)
+             (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) (IxCons (Wrap 4) (IxCons (Wrap 5) IxNil)))))
