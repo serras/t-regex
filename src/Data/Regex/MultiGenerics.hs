@@ -15,6 +15,7 @@
 module Data.Regex.MultiGenerics (
   -- * Base types
   Regex(Regex),
+  Regex',
   Fix(..),
 
   -- * Constructors
@@ -44,12 +45,12 @@ module Data.Regex.MultiGenerics (
   Capturable,
   match,
   -- ** Querying capture groups
-  CaptureGroup,
+  CaptureGroup(..),
   lookupGroup,
 
   -- * Views
   with,
-  Wrap,
+  Wrap(..),
   (?)
 ) where
 

@@ -11,16 +11,22 @@
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImpredicativeTypes #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE DataKinds #-}
 -- | Attribute grammars with regular expression matching.
 module Data.Regex.MultiRules (
+  -- * Children maps
+  Child(..),
+  Children,
+  lookupChild,
   -- * Basic blocks
   Action, Rule, Grammar,
   eval,
   -- * Nice syntax for defining rules
-  rule,
+  {- rule,
   -- ** Combinators
   check,
-  (->>>), (->>),
+  (->>>), (->>), -}
   -- ** Special lenses
   this, at,
   inh, syn
@@ -28,9 +34,7 @@ module Data.Regex.MultiRules (
 
 import Control.Applicative
 import Control.Monad.State
-import Data.Foldable (foldMap)
-import Data.Map (Map)
-import qualified Data.Map as M
+import Data.Foldable (fold)
 import Data.Maybe (fromJust)
 import Data.Monoid
 import Data.MultiGenerics
@@ -38,98 +42,125 @@ import Data.Regex.MultiGenerics
 
 import Unsafe.Coerce
 
--- | Values record both an actual value and the singleton of the
---   index they correspond to.
-data Value f where
-  Value :: Eq (Sing ix) => Sing ix -> f ix -> Value f
+-- | A child records both an actual values and the index it corresponds to.
+data Child (c :: k -> *) (attrib :: k -> *) where
+  Child :: c ix -> [attrib ix] -> Child c attrib
+-- | Children are just a list of 'Child's.
+type Children c attrib = [Child c attrib]
+
+lookupChild :: EqM c => c ix -> Children c attrib -> [attrib ix]
+lookupChild _ [] = []
+lookupChild c (Child ix info : rest) | c `eqM` ix = unsafeCoerce info
+                                     | otherwise  = lookupChild c rest
+
+insertChild :: EqM c => c ix -> [attrib ix] -> Children c attrib -> Children c attrib
+insertChild k e [] = [Child k e]
+insertChild k e (c@(Child ix _) : rest) | k `eqM` ix = Child k e : rest
+                                        | otherwise  = c : insertChild k e rest
+
 -- | Actions create new inherited attributes for their children,
 --   and synthesized attribute for its own node, from the synthesized
 --   attributes of children and the inheritance from its parent.
 --   Additionally, actions may include an explicit backtrack.
-type Action c (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) (ix :: k) =
-  Fix f ix -> inh ix -> Map c (Value syn) -> (Bool, Map c (Value inh), syn ix)
+type Action (c :: k -> *) (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) (ix :: k) =
+  Fix f ix -> inh ix -> Children c syn -> (Bool, Children c inh, syn ix)
 -- | A rule comprises the regular expression to match
 --   and the action to execute if successful.
-data Rule c (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) where
-  Rule :: Sing ix -> Regex c f ix -> Action c f inh syn ix -> Rule c f inh syn
+data Rule (c :: k -> *) (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) where
+  Rule :: Regex c f ix -> Action c f inh syn ix -> Rule c f inh syn
 -- | A grammar is simply a list of rules.
-type Grammar c (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) =
+type Grammar (c :: k -> *) (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) =
   [Rule c f inh syn]
 
 -- | Evaluate an attribute grammar over a certain term.
-eval' :: forall c (f :: (k -> *) -> (k -> *)) (inh :: k -> *) (syn :: k -> *) (ix :: k).
-         (Ord c, Matchable f, MonoidM syn)
-      => Grammar c f inh syn -> inh ix -> Result f -> syn ix
-eval' grammar down (Result (termIx :: Sing ix) term) =
-  fromJust $ foldr (<|>) empty $ map evalRule grammar
-  where evalRule (Rule ruleIx regex action) = do  -- Maybe monad
-          guard $ (termIx :: Sing ix) == (unsafeCoerce ruleIx :: Sing ix)
-          let regex'  = (unsafeCoerce regex  :: Regex c f ix)
-              action' = (unsafeCoerce action :: Action c f inh syn ix)
-          (captures :: Map c [Result f]) <- match regex' term
-          let (ok, childrenInh, up) = action' term down $ M.mapWithKey evalList captures
-              evalList k = map (\r@(Result childS child) -> eval' grammar (childrenInh M.! k) r)
+eval :: forall c f inh syn ix. Capturable c f
+     => Grammar c f inh syn -> inh ix -> Fix f ix -> syn ix
+eval grammar down term = fromJust $ foldr (<|>) empty $ map evalRule grammar
+  where evalRule :: Rule c f inh syn -> Maybe (syn ix)
+        evalRule (Rule regex action) = do  -- Maybe monad
+          let regex'  = unsafeCoerce regex
+              action' = unsafeCoerce action
+          (captures :: [CaptureGroup c f []]) <- match regex' term
+          let (ok, children, up) = action' term down $ map evalList captures
+              evalList (CaptureGroup k subterms) = let [kInh] = lookupChild k children
+                                                    in Child k $ map (eval grammar kInh) subterms
           guard ok
           return up
 
-{-
-data ActionState c inh syn = ActionState { _apply :: Bool, _this :: (inh, syn), _rest :: Map c (inh, syn) }
+
+data InhAndSyn inh syn ix = InhAndSyn (inh ix) [syn ix]
+data ActionState c inh syn ix = ActionState { _apply :: Bool
+                                            , _this :: InhAndSyn inh syn ix
+                                            , _rest :: Children c (InhAndSyn inh syn)
+                                            }
 
 -- | Lens for the attributes of the current node. To be used in composition with 'inh' or 'syn'.
-this :: Functor f => ((inh,syn) -> f (inh,syn))
-                  -> ActionState c inh syn -> f (ActionState c inh syn)
+this :: Functor f
+     => (InhAndSyn inh syn ix -> f (InhAndSyn inh syn ix))
+     -> ActionState c inh syn ix -> f (ActionState c inh syn ix)
 this go (ActionState ok th rs) = (\x -> ActionState ok x rs) <$> go th
 {-# INLINE this #-}
 
 -- | Lens the attributes of a child node. To be used in composition with 'inh' or 'syn'.
-at :: (Ord c, Functor f) => c -> ((inh,syn) -> f (inh,syn))
-                         -> ActionState c inh syn -> f (ActionState c inh syn)
-at k go (ActionState ok th rs) = (\x -> ActionState ok th (M.insert k x rs)) <$> go (rs M.! k)
+at :: (EqM c, Functor f, Monoid (c xi))
+   => c xi -> (InhAndSyn inh syn xi -> f (InhAndSyn inh syn xi))
+   -> ActionState c inh syn ix -> f (ActionState c inh syn ix)
+at k go (ActionState ok th rs) = (\x -> ActionState ok th (insertChild k [x] rs)) <$> go (head $ lookupChild k rs)
 {-# INLINE at #-}
 
 -- | Lens for the inherited attributes of a node.
 --   Use only as getter with 'this' and as setter with 'at'.
-inh :: Functor f => (inh -> f inh) -> (inh, syn) -> f (inh, syn)
-inh go (i,s) = (\x -> (x,s)) <$> go i
+inh :: Functor f => (inh ix -> f (inh ix))
+    -> InhAndSyn inh syn ix -> f (InhAndSyn inh syn ix)
+inh go (InhAndSyn i s) = (\x -> InhAndSyn x s) <$> go i
 {-# INLINE inh #-}
 
 -- | Lens the inherited synthesized attributes of a node.
 --   Use only as setter with 'this' and as getter with 'at'.
-syn :: Functor f => (syn -> f syn) -> (inh, syn) -> f (inh, syn)
-syn go (i,s) = (\x -> (i,x)) <$> go s
+syn :: (Monoid (syn ix), Functor f) => (syn ix -> f (syn ix))
+    -> InhAndSyn inh syn ix -> f (InhAndSyn inh syn ix)
+syn go (InhAndSyn i s) = (\x -> InhAndSyn i [x]) <$> go (fold s)
 {-# INLINE syn #-}
 
+data IxList (c :: k -> *) :: [k] -> * where
+  IxNil  :: IxList c '[]
+  IxCons :: c ix -> IxList c rest -> IxList c (ix ': rest)
 
-stateToAction :: (Ord c, Monoid syn)
-              => [c] -> (Fix f -> State (ActionState c inh syn) ())
-              -> Action c f inh syn
+stateToAction :: EqM c => IxList c ixs
+              -> (Fix f ix -> State (ActionState c inh syn ix) ())
+              -> Action c f inh syn ix
+stateToAction nodes st term down up = _
+{-
 stateToAction nodes st term down up =
   let initialRest = M.fromList $ map (\c -> (c, (down, up M.! c))) nodes  -- down copy rule
       initial = ActionState True (down, mempty) initialRest  -- start with empty
       ActionState ok th rs = execState (st term) initial
    in (ok, M.map fst rs, snd th)
+-}
 
 -- | Separates matching and attribute calculation on a rule.
 --   The action should take as extra parameter the node which was matched.
-(->>>) :: Monoid syn
-       => (forall k. Regex' k Integer f) -> (Fix f -> State (ActionState Integer inh syn) ())
-       -> [Integer] -> Rule Integer f inh syn
-(rx ->>> st) nodes = (Regex rx, stateToAction nodes st)
+(->>>) :: forall (c :: k -> *) f (ix :: k) inh syn (ixs :: [k])
+        . (forall c. Regex' c (Wrap Integer) f ix)
+       -> (Fix f ix -> State (ActionState (Wrap Integer) inh syn ix) ())
+       -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
+(rx ->>> st) nodes = Rule (Regex rx) (stateToAction nodes st)
 
 -- | Separates matching and attribute calculation on a rule.
-(->>) :: Monoid syn
-      => (forall k. Regex' k Integer f) -> State (ActionState Integer inh syn) ()
-      -> [Integer] -> Rule Integer f inh syn
-rx ->> st = rx ->>> const st
+(->>) :: forall (c :: k -> *) f (ix :: k) inh syn (ixs :: [k])
+       . (forall c. Regex' c (Wrap Integer) f ix)
+      -> State (ActionState (Wrap Integer) inh syn ix) ()
+      -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
+(rx ->> st) nodes = (rx ->>> const st) nodes
 
 -- | Makes the attribute calculation fail if the condition is false.
 --   This function can be used to add extra conditions over whether
 --   a certain rule should be applied (a bit like guards).
-check :: Bool -> State (ActionState Integer inh syn) ()
+check :: Bool -> State (ActionState (Wrap Integer) inh syn ix) ()
 check ok = modify (\(ActionState _ th rs) -> ActionState ok th rs)
 
 
-class RuleBuilder (f :: * -> *) inh syn fn r | fn -> r, r -> f inh syn where
+class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) fn r | fn -> r, r -> f inh syn where
   -- | Converts a rule description into an actual 'Rule'.
   --   Its use must follow this pattern:
   --
@@ -144,18 +175,17 @@ class RuleBuilder (f :: * -> *) inh syn fn r | fn -> r, r -> f inh syn where
   --   >     this . syn  .= ...          -- Set upwards synthesized attributes
   rule :: fn -> r
 
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              ([Integer] -> Rule Integer f inh syn)
-              (Rule Integer f inh syn) where
-  rule r = r []
+instance RuleBuilder f inh syn
+              (IxList (Wrap Integer) '[] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (IxNil)
 
-instance Monoid syn =>
-  RuleBuilder f inh syn
-              (Integer -> [Integer] -> Rule Integer f inh syn)
-              (Rule Integer f inh syn) where
-  rule r = r 1 [1]
+instance RuleBuilder f inh syn
+              (Wrap Integer ix1 -> IxList (Wrap Integer) '[ix1] -> Rule (Wrap Integer) f inh syn)
+              (Rule (Wrap Integer) f inh syn) where
+  rule r = r (Wrap 1) (IxCons (Wrap 1) IxNil)
 
+{-
 instance Monoid syn =>
   RuleBuilder f inh syn
               (Integer -> Integer -> [Integer] -> Rule Integer f inh syn)
