@@ -10,10 +10,10 @@
 {-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE ImpredicativeTypes #-}
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 -- | Attribute grammars with regular expression matching.
 module Data.Regex.MultiRules (
   -- * Children maps
@@ -30,7 +30,10 @@ module Data.Regex.MultiRules (
   (->>>), (->>),
   -- ** Special lenses
   this, at,
-  inh, syn
+  inh, syn,
+  -- * Utilities for defining attributes
+  IndexIndependent(..),
+  inh_, syn_
 ) where
 
 import Control.Applicative
@@ -179,7 +182,25 @@ check :: Bool -> State (ActionState (Wrap Integer) inh syn ix) ()
 check ok = modify (\(ActionState _ th rs) -> ActionState ok th rs)
 
 
-class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) fn r | fn -> r, r -> f inh syn where
+-- | Utility type which does not distinguish between indices.
+newtype IndexIndependent t ix = IndexIndependent t deriving (Show, Eq, Ord, Monoid)
+
+-- | Lens for 'Indexed' inherited attributes of a node.
+--   Use only as getter with 'this' and as setter with 'at'.
+inh_ :: (Functor f) => (inh -> f inh)
+     -> InhAndSyn (IndexIndependent inh) syn ix -> f (InhAndSyn (IndexIndependent inh) syn ix)
+inh_ go (InhAndSyn (IndexIndependent i) s) = (\x -> InhAndSyn (IndexIndependent x) s) <$> go i
+{-# INLINE inh_ #-}
+
+-- | Lens the 'Indexed' synthesized attributes of a node.
+--   Use only as setter with 'this' and as getter with 'at'.
+syn_ :: (Functor f) => (syn -> f syn)
+     -> InhAndSyn inh (IndexIndependent syn) ix -> f (InhAndSyn inh (IndexIndependent syn) ix)
+syn_ go (InhAndSyn i (IndexIndependent s)) = (\x -> InhAndSyn i (IndexIndependent x)) <$> go s
+{-# INLINE syn_ #-}
+
+
+class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) (ixs :: [k]) fn | fn -> ixs where
   -- | Converts a rule description into an actual 'Rule'.
   --   Its use must follow this pattern:
   --
@@ -192,51 +213,29 @@ class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) fn r
   --   >     at c2 . inh .= ...          -- Set inherited for children
   --   >     c1Syn <- use (at c1 . syn)  -- Get synthesized from children
   --   >     this . syn  .= ...          -- Set upwards synthesized attributes
-  rule :: fn -> r
+  rule :: (fn -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn) -> Rule (Wrap Integer) f inh syn
 
-instance RuleBuilder f inh syn
-              (IxList (Wrap Integer) '[] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
-  rule r = r (IxNil)
+{-
+instance RuleBuilder f inh syn '[] () where
+  rule r = r IxNil
+-}
 
-instance RuleBuilder f inh syn
-              (Wrap Integer ix1
-               -> IxList (Wrap Integer) '[ix1] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
+instance RuleBuilder f inh syn '[ix1] (Wrap Integer ix1) where
   rule r = r (Wrap 1) (IxCons (Wrap 1) IxNil)
 
-instance RuleBuilder f inh syn
-              (Wrap Integer ix1
-               -> Wrap Integer ix2
-               -> IxList (Wrap Integer) '[ix1, ix2] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
-  rule r = r (Wrap 1) (Wrap 2) (IxCons (Wrap 1) ((IxCons (Wrap 2)) IxNil))
+instance RuleBuilder f inh syn '[ix1, ix2] (Wrap Integer ix1, Wrap Integer ix2) where
+  rule r = r (Wrap 1, Wrap 2) (IxCons (Wrap 1) ((IxCons (Wrap 2)) IxNil))
 
-instance RuleBuilder f inh syn
-              (Wrap Integer ix1
-              -> Wrap Integer ix2
-              -> Wrap Integer ix3
-              -> IxList (Wrap Integer) '[ix1, ix2, ix3] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
-  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) IxNil)))
+instance RuleBuilder f inh syn '[ix1, ix2, ix3]
+         (Wrap Integer ix1, Wrap Integer ix2, Wrap Integer ix3) where
+  rule r = r (Wrap 1, Wrap 2, Wrap 3) (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) IxNil)))
 
-instance RuleBuilder f inh syn
-              (Wrap Integer ix1
-              -> Wrap Integer ix2
-              -> Wrap Integer ix3
-              -> Wrap Integer ix4
-              -> IxList (Wrap Integer) '[ix1, ix2, ix3, ix4] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
-  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (Wrap 4)
+instance RuleBuilder f inh syn '[ix1, ix2, ix3, ix4]
+         (Wrap Integer ix1, Wrap Integer ix2, Wrap Integer ix3, Wrap Integer ix4) where
+  rule r = r (Wrap 1, Wrap 2, Wrap 3, Wrap 4)
              (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) (IxCons (Wrap 4) IxNil))))
 
-instance RuleBuilder f inh syn
-              (Wrap Integer ix1
-              -> Wrap Integer ix2
-              -> Wrap Integer ix3
-              -> Wrap Integer ix4
-              -> Wrap Integer ix5
-              -> IxList (Wrap Integer) '[ix1, ix2, ix3, ix4, ix5] -> Rule (Wrap Integer) f inh syn)
-              (Rule (Wrap Integer) f inh syn) where
-  rule r = r (Wrap 1) (Wrap 2) (Wrap 3) (Wrap 4) (Wrap 5)
+instance RuleBuilder f inh syn '[ix1, ix2, ix3, ix4, ix5]
+         (Wrap Integer ix1, Wrap Integer ix2, Wrap Integer ix3, Wrap Integer ix4, Wrap Integer ix5) where
+  rule r = r (Wrap 1, Wrap 2, Wrap 3, Wrap 4, Wrap 5)
              (IxCons (Wrap 1) (IxCons (Wrap 2) (IxCons (Wrap 3) (IxCons (Wrap 4) (IxCons (Wrap 5) IxNil)))))

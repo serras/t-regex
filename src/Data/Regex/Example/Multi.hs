@@ -24,28 +24,20 @@ module Data.Regex.Example.Multi (
   -- ** Some stand-alone expressions
   rBis1, rBis2, rBis3, rBis4,
   -- ** Using 'with' views
-  cBis1, eBis1 --,
+  cBis1, eBis1,
   -- ** Using the 'mrx' quasi-quoter
-  -- eBis2
+  eBis2,
+  -- * Grammars
+  grammar1
 ) where
 
-import Data.Regex.MultiGenerics
+import Control.Lens hiding (at, (#), children)
 import Data.MultiGenerics
+import Data.Regex.MultiGenerics
+import Data.Regex.MultiRules
 import Data.Regex.TH
 
 data Ty = One | Two
-
-{-
-data instance Sing (a :: Ty) where
-  SOne :: Sing One
-  STwo :: Sing Two
-deriving instance Eq (Sing (a :: Ty))
-
-instance SingI One where
-  sing = SOne
-instance SingI Two where
-  sing = STwo
--}
 
 data Bis f ix where
   NilOne'  :: Bis f One
@@ -117,3 +109,10 @@ eBis1 _                      = error "What?"
 
 eBis2 :: FixOne -> [FixOne]
 eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x
+
+grammar1 :: Grammar (Wrap Integer) Bis (IndexIndependent ()) (IndexIndependent String)
+grammar1 = [
+  rule $ \x ->
+    (x <<- inj NilOne') ->> do
+      this.syn_ .= "NilOne"
+  ]
