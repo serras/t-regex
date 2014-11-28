@@ -24,15 +24,17 @@ module Data.Regex.MultiRules (
   Action, Rule, Grammar,
   eval,
   -- * Nice syntax for defining rules
-  rule,
+  rule, rule0,
   -- ** Combinators
   check,
   (->>>), (->>),
   -- ** Special lenses
   this, at,
   inh, syn,
-  -- * Utilities for defining attributes
+  -- * Index-independent attributes
   IndexIndependent(..),
+  IndexIndependentGrammar,
+  iieval,
   inh_, syn_
 ) where
 
@@ -107,7 +109,7 @@ this go (ActionState ok th rs) = (\x -> ActionState ok x rs) <$> go th
 {-# INLINE this #-}
 
 -- | Lens the attributes of a child node. To be used in composition with 'inh' or 'syn'.
-at :: (EqM c, Functor f, Monoid (c xi))
+at :: (EqM c, Functor f)
    => c xi -> (InhAndSyn inh syn xi -> f (InhAndSyn inh syn xi))
    -> ActionState c inh syn ix -> f (ActionState c inh syn ix)
 at k go (ActionState ok th rs) = (\x -> ActionState ok th (insertChild k [x] rs)) <$> go (head $ lookupChild k rs)
@@ -185,6 +187,14 @@ check ok = modify (\(ActionState _ th rs) -> ActionState ok th rs)
 -- | Utility type which does not distinguish between indices.
 newtype IndexIndependent t ix = IndexIndependent t deriving (Show, Eq, Ord, Monoid)
 
+-- | A grammar whose attributes are equal throughout all indices.
+type IndexIndependentGrammar c f inh syn = Grammar c f (IndexIndependent inh) (IndexIndependent syn)
+
+-- | Evaluate an index-indendepent grammar.
+iieval :: forall c f inh syn ix. Capturable c f
+       => IndexIndependentGrammar c f inh syn -> inh -> Fix f ix -> syn
+iieval g down t = up where IndexIndependent up = eval g (IndexIndependent down) t
+
 -- | Lens for 'Indexed' inherited attributes of a node.
 --   Use only as getter with 'this' and as setter with 'at'.
 inh_ :: (Functor f) => (inh -> f inh)
@@ -215,10 +225,14 @@ class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) (ixs
   --   >     this . syn  .= ...          -- Set upwards synthesized attributes
   rule :: (fn -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn) -> Rule (Wrap Integer) f inh syn
 
-{-
+{- Does not fulfill coverage condition
 instance RuleBuilder f inh syn '[] () where
-  rule r = r IxNil
+  rule r = r () IxNil
 -}
+
+-- | Special case for rules without capture.
+rule0 :: (IxList (Wrap Integer) '[] -> Rule (Wrap Integer) f inh syn) -> Rule (Wrap Integer) f inh syn
+rule0 r = r IxNil
 
 instance RuleBuilder f inh syn '[ix1] (Wrap Integer ix1) where
   rule r = r (Wrap 1) (IxCons (Wrap 1) IxNil)

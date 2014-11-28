@@ -110,9 +110,24 @@ eBis1 _                      = error "What?"
 eBis2 :: FixOne -> [FixOne]
 eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x
 
-grammar1 :: Grammar (Wrap Integer) Bis (IndexIndependent ()) (IndexIndependent String)
+grammar1 :: IndexIndependentGrammar (Wrap Integer) Bis () String
 grammar1 = [
-  rule $ \x ->
-    (x <<- inj NilOne') ->> do
-      this.syn_ .= "NilOne"
+    rule0 $ 
+      inj NilOne' ->> do
+        this.syn_ .= "NilOne"
+  , rule $ \x ->
+      inj (ConsOne' 1 (x <<- any_)) ->> do
+        s <- use (at x . syn_)
+        this.syn_ .= "Special - " ++ s
+  , rule $ \x ->
+      inj (ConsOne' __ (x <<- any_)) ->>> \(ConsOne n _) -> do
+        s <- use (at x . syn_)
+        this.syn_ .= show n ++ " - " ++ s
+  , rule0 $ 
+      inj NilTwo' ->> do
+        this.syn_ .= "NilTwo"
+  , rule $ \x ->
+      inj (ConsTwo' __ (x <<- any_)) ->>> \(ConsTwo n _) -> do
+        s <- use (at x . syn_)
+        this.syn_ .= show n ++ " - " ++ s
   ]
