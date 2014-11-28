@@ -57,6 +57,7 @@ module Data.Regex.MultiGenerics (
 import Control.Applicative
 import Control.Exception
 import Control.Monad (guard)
+import qualified Data.Foldable as F
 import Data.Foldable (Foldable, toList)
 import Data.List (intercalate)
 import Data.MultiGenerics
@@ -249,9 +250,16 @@ instance MatchG (Par1m xi) where
   injesG (Par1m r) (Par1m t) = matches' r t
   injG   (Par1m r) (Par1m t) = match' r t
 
-instance MatchG f => MatchG (Rec1m f xi) where
-  injesG (Rec1m r) (Rec1m t) = injesG r t
-  injG   (Rec1m r) (Rec1m t) = injG r t
+instance (Functor f, Foldable f) => MatchG (Rec1m f xi) where
+  injesG (Rec1m rs) (Rec1m ts) i s =
+    F.foldr (||) False $ fmap (\r -> F.foldr (&&) True $ fmap (\t -> matches' r t i s) ts) rs
+  injG   (Rec1m rs) (Rec1m ts) i s =
+    F.foldr (<|>) Nothing  -- Get only the first option
+    $ fmap (\r -> F.foldr (\x1 x2 -> case (x1, x2) of
+                                       (Just m1, Just m2) -> Just (unionGroups m1 m2)
+                                       _                  -> Nothing)
+                  (Just [])
+                  $ fmap (\t -> match' r t i s) ts) rs
 
 instance Eq c => MatchG (K1m i c) where
   injesG (K1m r) (K1m t) _ _ =

@@ -67,9 +67,9 @@ instance Generic1m (Par1m xi) where
   from1k = id
   to1k   = id
 
--- | Recursive calls of kind 'k -> (k -> *) -> *'.
-newtype Rec1m (f :: (k -> *) -> k -> *) (xi :: k) (p :: k -> *) (ix :: k)
-  = Rec1m { unRec1m :: f p xi }
+-- | Recursive calls of kind '* -> *'.
+newtype Rec1m (f :: * -> *) (xi :: k) (p :: k -> *) (ix :: k)
+  = Rec1m { unRec1m :: f (p xi) }
 
 instance Generic1m (Rec1m f xi) where
   type Rep1m (Rec1m f xi) = Rec1m f xi
