@@ -21,7 +21,7 @@ module Data.Regex.MultiRules (
   Children,
   lookupChild,
   -- * Basic blocks
-  Action, Rule, Grammar,
+  Action, Rule(..), Grammar,
   eval,
   -- * Nice syntax for defining rules
   rule, rule0,
