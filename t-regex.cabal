@@ -27,7 +27,8 @@ library
                      haskell-src-meta,
                      mtl >= 2,
                      transformers,
-                     lens >= 4
+                     lens >= 4,
+                     QuickCheck > 2
   hs-source-dirs:    src
   default-language:  Haskell2010
   ghc-options:       -Wall

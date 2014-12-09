@@ -35,10 +35,11 @@ module Data.Regex.MultiRules (
   IndexIndependent(..),
   IndexIndependentGrammar,
   iieval,
-  inh_, syn_
+  inh_, syn_, copy
 ) where
 
 import Control.Applicative
+import Control.Lens (use, (.=))
 import Control.Monad.State
 import Data.Foldable (fold)
 import Data.Maybe (fromJust)
@@ -208,6 +209,12 @@ syn_ :: (Functor f) => (syn -> f syn)
      -> InhAndSyn inh (IndexIndependent syn) ix -> f (InhAndSyn inh (IndexIndependent syn) ix)
 syn_ go (InhAndSyn i (IndexIndependent s)) = (\x -> InhAndSyn i (IndexIndependent x)) <$> go s
 {-# INLINE syn_ #-}
+
+-- | Apply copy rule for inherited attributes.
+copy :: EqM c => [c xi] ->  State (ActionState c (IndexIndependent inh) syn ix) ()
+copy nodes = do
+  down <- use (this . inh_)
+  mapM_ (\node -> at node . inh_ .= down) nodes
 
 
 class RuleBuilder (f :: (k -> *) -> k -> *) (inh :: k -> *) (syn :: k -> *) (ixs :: [k]) fn | fn -> ixs where
