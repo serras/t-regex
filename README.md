@@ -99,21 +99,16 @@ you would represent a tree whose top node is a 2:
 topTwo = inj (Branch' 2 any_ any_)
 ```
 
-In some cases, though, `inj` is too strict, as every non-recursive field
-has to be given a value. But when pattern matching, in some cases you
-are only interested on the shape of the tree itself. For that reason, the
-library introduces a variant of injection called *shallow injection* and
-available using `shallow`. With shallow injection, only constructors from
-the pattern functor are checked, nothing else.
+In some cases, you don't want to check the value of a certain position
+which is not recursive. In that case, you cannot use `any_`, since we
+are not talking about the type being built upon. For that case, you
+may use the special value `__`.
 
 For example, here is how you would represent the shape of a tree which
 has at least one branch point:
 ```haskell
-topTwo = shallow (Branch' __ any_ any_)
+someBranching = inj (Branch' __ any_ any_)
 ```
-If you think about it, we cannot express it using `inj`, as any number has
-to match. As a convenience, `t-regex` includes a special constant `__` to
-be used alongside `shallow` to represent "I don't care about the value".
 
 #### Iteration and concatenation
 
@@ -283,7 +278,7 @@ grammar = [
        this.syn._1 .= "(" ++ lText ++ ")-SPECIAL-(" ++ rText ++ ")"
        this.syn._2 .= lN + rN
   , rule $ \l r ->
-     shallow (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
+     inj (Branch' __ (l <<- any_) (r <<- any_)) ->>> \(Branch e _ _) -> do
 	   check $ e >= 0
        (lText,lN) <- use (at l . syn)
        (rText,rN) <- use (at r . syn)
@@ -313,7 +308,7 @@ rule is selected.
 Two small extensions are shown in the second rule. By default,
 `->>` does not give you access to the matched term. However, if you
 need to access some of its information (for example, because you
-used `shallow`, as in this case), you can use the alternative version
+used `__`, as in this case), you can use the alternative version
 `->>>` which gives this as an argument. The second extension is the
 use of `check` to pinpoint a logical condition which is not captured
 by the regular expression itself.
