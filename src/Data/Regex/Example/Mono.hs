@@ -33,6 +33,7 @@ module Data.Regex.Example.Mono (
   grammar1, grammar2, grammar3
 ) where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Lens hiding (at, (#), children)
 import Data.Map ((!))
 import qualified Data.Map as M
@@ -41,6 +42,7 @@ import Data.Regex.Generics
 import Data.Regex.Rules
 import Data.Regex.TH
 import GHC.Generics
+import Test.QuickCheck
 
 -- | The pattern functor, which should be kept open.
 --   Recursion is done by using the argument.
@@ -48,6 +50,11 @@ data Tree' f = Leaf' | Branch' { elt :: Int, left :: f, right :: f }
   deriving (Generic1, Show)
 -- | Closes the data type by creating its fix-point.
 type Tree = Fix Tree'
+
+instance Arbitrary Tree where
+  arbitrary = frequency
+    [ (1, return Leaf)
+    , (5, Branch <$> arbitrary <*> arbitrary <*> arbitrary) ]
 
 -- | The pattern functor for rose trees.
 data Rose' f = Rose' { value :: Int, child :: [f] }

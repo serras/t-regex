@@ -51,7 +51,11 @@ module Data.Regex.MultiGenerics (
   -- * Views
   with,
   Wrap(..),
-  (?)
+  (?),
+
+  -- * Random generation
+  arbitraryFromRegex,
+  arbitraryFromRegexAndGen
 ) where
 
 import Control.Applicative
@@ -63,6 +67,8 @@ import Data.List (intercalate)
 import Data.MultiGenerics
 import Data.Typeable
 import System.IO.Unsafe (unsafePerformIO)
+import Test.QuickCheck
+import Test.QuickCheck.Arbitrary1
 
 import Unsafe.Coerce -- :(
 
@@ -357,3 +363,68 @@ instance Matchable f
                     , lookupGroupDef (Wrap 4) m
                     , lookupGroupDef (Wrap 5) m))
              <$> match (r (Wrap 1) (Wrap 2) (Wrap 3) (Wrap 4) (Wrap 5)) t
+
+-- | Return a random value which matches the given regular expression.
+arbitraryFromRegex :: (Generic1m f, ArbitraryRegexG (Rep1m f)
+                      , ArbitraryM (Fix f), SingI ix)
+                   => Regex c f ix -> Gen (Fix f ix)
+arbitraryFromRegex = arbitraryFromRegexAndGen arbitraryM
+
+-- | Return a random value which matches the given regular expression,
+--   and which uses a supplied generator for 'any_'.
+arbitraryFromRegexAndGen :: (Generic1m f, ArbitraryRegexG (Rep1m f), SingI ix)
+                         => GenM (Fix f) -> Regex c f ix -> Gen (Fix f ix)
+arbitraryFromRegexAndGen g r = arbitraryFromRegex_ g (unRegex r) 0 []
+
+arbitraryFromRegex_ :: (Generic1m f, ArbitraryRegexG (Rep1m f), SingI ix)
+                    => GenM (Fix f)
+                    -> Regex' WrappedInteger c f ix
+                    -> Integer
+                    -> [(Integer, forall xi. Regex' WrappedInteger c f xi)]
+                    -> Gen (Fix f ix)
+arbitraryFromRegex_ _ Empty          _ _ = error "Cannot generate empty tree"
+arbitraryFromRegex_ g Any            _ _ = g sing
+arbitraryFromRegex_ g (Capture _ r)  i s = arbitraryFromRegex_ g r i s
+arbitraryFromRegex_ g (Inject r)     i s = Fix . to1k <$> arbG g (from1k r) i s
+arbitraryFromRegex_ g (Square (W n)) i s = let Just r = lookup n s in arbitraryFromRegex_ g r i s
+arbitraryFromRegex_ g (Concat r1 r2) i s = arbitraryFromRegex_ g (r1 (W i)) (i+1) ((i, unsafeCoerce r2):s)
+arbitraryFromRegex_ g r@(Choice _ _) i s = oneof [arbitraryFromRegex_ g rx i s | rx <- toListOfChoices r]
+
+toListOfChoices :: Regex' k c f ix -> [Regex' k c f ix]
+toListOfChoices Empty          = []
+toListOfChoices Any            = [Any]
+toListOfChoices (Capture _ r)  = toListOfChoices r
+toListOfChoices (Choice r1 r2) = toListOfChoices r1 ++ toListOfChoices r2
+toListOfChoices r              = [r]
+
+class ArbitraryRegexG f where
+  arbG :: (Generic1m g, ArbitraryRegexG (Rep1m g))
+       => GenM (Fix g)
+       -> f (Regex' WrappedInteger c g) ix
+       -> Integer
+       -> [(Integer, forall xi. Regex' WrappedInteger c g xi)]
+       -> Gen (f (Fix g) ix)
+
+instance ArbitraryRegexG U1m where
+  arbG _ U1m _ _ = return U1m
+
+instance SingI xi => ArbitraryRegexG (Par1m xi) where
+  arbG g (Par1m r) i s = Par1m <$> arbitraryFromRegex_ g r i s
+
+instance Arbitrary c => ArbitraryRegexG (K1m i c) where
+  arbG _ (K1m r) _ _ = unsafePerformIO $
+                         catch (r `seq` return (return (K1m r)))  -- try to return a constant value
+                               (\(_ :: DoNotCheckThisException) -> return (K1m <$> arbitrary))
+
+instance (Foldable f, Arbitrary1 f, SingI xi) => ArbitraryRegexG (Rec1m f xi) where
+  arbG g (Rec1m rs) i s = let r:_ = toList rs in Rec1m <$> arbitrary1 (arbitraryFromRegex_ g r i s)
+
+instance ArbitraryRegexG f => ArbitraryRegexG (Tag1m f xi) where
+  arbG g (Tag1m r) i s = Tag1m <$> arbG g r i s
+
+instance (ArbitraryRegexG a, ArbitraryRegexG b) => ArbitraryRegexG (a :++: b) where
+  arbG g (L1m r) i s = L1m <$> arbG g r i s
+  arbG g (R1m r) i s = R1m <$> arbG g r i s
+
+instance (ArbitraryRegexG a, ArbitraryRegexG b) => ArbitraryRegexG (a :**: b) where
+  arbG g (r1 :**: r2) i s = (:**:) <$> arbG g r1 i s <*> arbG g r2 i s

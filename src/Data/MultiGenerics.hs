@@ -8,10 +8,11 @@
 -- Pattern functors should have kind @(k -> *) -> k -> *@.
 module Data.MultiGenerics where
 
+import Test.QuickCheck.Gen
+
 -- | Multirec-style fix-point, indexed by data kind.
 newtype Fix (f :: (k -> *) -> k -> *) (ix :: k) = Fix { unFix :: f (Fix f) ix }
 
-{-
 -- | The singleton kind-indexed data family. Taken from the @singletons@ package.
 data family Sing (a :: k)
 
@@ -20,7 +21,6 @@ class SingI (a :: k) where
   -- | Produce the singleton explicitly. You will likely need the @ScopedTypeVariables@
   -- extension to use this method the way you want.
   sing :: Sing a
--}
 
 -- | Convert a pattern functor to a readable 'String'.
 class ShowM (f :: k -> *) where
@@ -30,6 +30,12 @@ class ShowM (f :: k -> *) where
 -- | We have equality for each instantiation of the pattern functor.
 class EqM (f :: k -> *) where
   eqM :: f ix -> f xi -> Bool
+
+-- | Generate a random element given a proxy.
+type GenM f = forall ix. Sing ix -> Gen (f ix)
+
+class ArbitraryM (f :: k -> *) where
+  arbitraryM :: GenM f
 
 -- | Representable types of kind * -> *.
 -- This class is derivable in GHC with the DeriveGeneric flag on.

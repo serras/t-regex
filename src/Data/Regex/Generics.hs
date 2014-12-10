@@ -44,8 +44,8 @@ module Data.Regex.Generics (
   with,
 
   -- * Random generation
-  Arbitrary1(..),
-  arbitraryFromRegex
+  arbitraryFromRegex,
+  arbitraryFromRegexAndGen
 ) where
 
 import Control.Applicative
@@ -60,6 +60,7 @@ import Data.Typeable
 import GHC.Generics
 import System.IO.Unsafe (unsafePerformIO)
 import Test.QuickCheck
+import Test.QuickCheck.Arbitrary1
 
 -- | The basic data type for tree regular expressions.
 --
@@ -275,34 +276,31 @@ instance (Generic1 f, MatchG (Rep1 f))
 
 -- Generation of arbitrary elements following a pattern
 
--- | Version of 'Arbitrary' for functors.
-class Arbitrary1 f where
-  arbitrary1 :: Arbitrary a => Gen a -> Gen (f a)
-
--- From QuickCheck source
-instance Arbitrary1 [] where
-  arbitrary1 g = sized $ \n ->
-    do k <- choose (0,n)
-       sequence [ g | _ <- [1..k] ]
-
 -- | Return a random value which matches the given regular expression.
 arbitraryFromRegex :: (Generic1 f, ArbitraryRegexG (Rep1 f), Arbitrary (Fix f))
                    => Regex c f -> Gen (Fix f)
-arbitraryFromRegex r = arbitraryFromRegex_ (unRegex r) 0 []
+arbitraryFromRegex = arbitraryFromRegexAndGen arbitrary
 
-arbitraryFromRegex_ :: (Generic1 f, ArbitraryRegexG (Rep1 f), Arbitrary (Fix f))
-                    => Regex' Integer c f
+-- | Return a random value which matches the given regular expression,
+--   and which uses a supplied generator for 'any_'.
+arbitraryFromRegexAndGen :: (Generic1 f, ArbitraryRegexG (Rep1 f))
+                         => Gen (Fix f) -> Regex c f -> Gen (Fix f)
+arbitraryFromRegexAndGen g r = arbitraryFromRegex_ g (unRegex r) 0 []
+
+arbitraryFromRegex_ :: (Generic1 f, ArbitraryRegexG (Rep1 f))
+                    => Gen (Fix f)
+                    -> Regex' Integer c f
                     -> Integer -> [(Integer, Regex' Integer c f)]
                     -> Gen (Fix f)
-arbitraryFromRegex_ Empty          _ _ = error "Cannot generate empty tree"
-arbitraryFromRegex_ Any            _ _ = arbitrary
-arbitraryFromRegex_ (Capture _ r)  i s = arbitraryFromRegex_ r i s
-arbitraryFromRegex_ (Inject r)     i s = Fix . to1 <$> arbG (from1 r) i s
-arbitraryFromRegex_ (Square n)     i s = let Just r = lookup n s in arbitraryFromRegex_ r i s
-arbitraryFromRegex_ (Concat r1 r2) i s = arbitraryFromRegex_ (r1 i) (i+1) ((i,r2):s)
-arbitraryFromRegex_ r@(Choice _ _) i s = oneof $ [arbitraryFromRegex_ rx i s | rx <- toListOfChoices r]
+arbitraryFromRegex_ _ Empty          _ _ = error "Cannot generate empty tree"
+arbitraryFromRegex_ g Any            _ _ = g
+arbitraryFromRegex_ g (Capture _ r)  i s = arbitraryFromRegex_ g r i s
+arbitraryFromRegex_ g (Inject r)     i s = Fix . to1 <$> arbG g (from1 r) i s
+arbitraryFromRegex_ g (Square n)     i s = let Just r = lookup n s in arbitraryFromRegex_ g r i s
+arbitraryFromRegex_ g (Concat r1 r2) i s = arbitraryFromRegex_ g (r1 i) (i+1) ((i,r2):s)
+arbitraryFromRegex_ g r@(Choice _ _) i s = oneof [arbitraryFromRegex_ g rx i s | rx <- toListOfChoices r]
 
-toListOfChoices :: Regex' Integer c f -> [Regex' Integer c f]
+toListOfChoices :: Regex' k c f -> [Regex' k c f]
 toListOfChoices Empty          = []
 toListOfChoices Any            = [Any]
 toListOfChoices (Capture _ r)  = toListOfChoices r
@@ -310,31 +308,32 @@ toListOfChoices (Choice r1 r2) = toListOfChoices r1 ++ toListOfChoices r2
 toListOfChoices r              = [r]
 
 class ArbitraryRegexG f where
-  arbG :: (Generic1 g, ArbitraryRegexG (Rep1 g), Arbitrary (Fix g))
-       => f (Regex' Integer c g)
+  arbG :: (Generic1 g, ArbitraryRegexG (Rep1 g))
+       => Gen (Fix g)
+       -> f (Regex' Integer c g)
        -> Integer -> [(Integer, Regex' Integer c g)]
        -> Gen (f (Fix g))
 
 instance ArbitraryRegexG U1 where
-  arbG U1 _ _ = return U1
+  arbG _ U1 _ _ = return U1
 
 instance ArbitraryRegexG Par1 where
-  arbG (Par1 r) i s = Par1 <$> arbitraryFromRegex_ r i s
+  arbG g (Par1 r) i s = Par1 <$> arbitraryFromRegex_ g r i s
 
 instance Arbitrary c => ArbitraryRegexG (K1 i c) where
-  arbG (K1 r) _ _ = unsafePerformIO $
-                      catch (r `seq` return (return (K1 r)))  -- try to return a constant value
-                            (\(_ :: DoNotCheckThisException) -> return (K1 <$> arbitrary))
+  arbG _ (K1 r) _ _ = unsafePerformIO $
+                        catch (r `seq` return (return (K1 r)))  -- try to return a constant value
+                              (\(_ :: DoNotCheckThisException) -> return (K1 <$> arbitrary))
 
 instance (Foldable f, Arbitrary1 f) => ArbitraryRegexG (Rec1 f) where
-  arbG (Rec1 rs) i s = let r:_ = toList rs in Rec1 <$> arbitrary1 (arbitraryFromRegex_ r i s)
+  arbG g (Rec1 rs) i s = let r:_ = toList rs in Rec1 <$> arbitrary1 (arbitraryFromRegex_ g r i s)
 
 instance ArbitraryRegexG a => ArbitraryRegexG (M1 i c a) where
-  arbG (M1 r) i s = M1 <$> arbG r i s
+  arbG g (M1 r) i s = M1 <$> arbG g r i s
 
 instance (ArbitraryRegexG a, ArbitraryRegexG b) => ArbitraryRegexG (a :+: b) where
-  arbG (L1 r) i s = L1 <$> arbG r i s
-  arbG (R1 r) i s = R1 <$> arbG r i s
+  arbG g (L1 r) i s = L1 <$> arbG g r i s
+  arbG g (R1 r) i s = R1 <$> arbG g r i s
 
 instance (ArbitraryRegexG a, ArbitraryRegexG b) => ArbitraryRegexG (a :*: b) where
-  arbG (r1 :*: r2) i s = (:*:) <$> arbG r1 i s <*> arbG r2 i s
+  arbG g (r1 :*: r2) i s = (:*:) <$> arbG g r1 i s <*> arbG g r2 i s

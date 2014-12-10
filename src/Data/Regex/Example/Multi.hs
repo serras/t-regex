@@ -22,7 +22,7 @@ module Data.Regex.Example.Multi (
   aBis1, aBis2,
   -- * Tree regular expressions
   -- ** Some stand-alone expressions
-  rBis1, rBis2, rBis3, rBis4,
+  rBis1, rBis2, rBis3, rBis4, rBis5,
   -- ** Using 'with' views
   cBis1, eBis1,
   -- ** Using the 'mrx' quasi-quoter
@@ -31,13 +31,25 @@ module Data.Regex.Example.Multi (
   grammar1
 ) where
 
+import Control.Applicative ((<$>), (<*>))
 import Control.Lens hiding (at, (#), children)
 import Data.MultiGenerics
 import Data.Regex.MultiGenerics
 import Data.Regex.MultiRules
 import Data.Regex.TH
+import Test.QuickCheck
 
 data Ty = One | Two
+
+data instance Sing (a :: Ty) where
+  SOne :: Sing One
+  STwo :: Sing Two
+deriving instance Eq (Sing (a :: Ty))
+
+instance SingI One where
+  sing = SOne
+instance SingI Two where
+  sing = STwo
 
 data Bis f ix where
   NilOne'  :: Bis f One
@@ -47,6 +59,12 @@ data Bis f ix where
 
 type FixOne = Fix Bis One
 type FixTwo = Fix Bis Two
+
+instance ArbitraryM (Fix Bis) where
+  arbitraryM SOne = frequency [ (1, return NilOne)
+                              , (3, ConsOne <$> arbitrary <*> arbitraryM STwo) ]
+  arbitraryM STwo = frequency [ (1, return NilTwo)
+                              , (3, ConsTwo <$> arbitrary <*> arbitraryM SOne) ]
 
 instance ShowM (Fix Bis) where
   showM (Fix NilOne')        = "NilOne"
@@ -98,6 +116,9 @@ rBis3 = Regex $ inj (ConsOne' 2 (inj (ConsTwo' 'a' (inj NilOne'))))
 
 rBis4 :: Regex c Bis One
 rBis4 = Regex $ inj NilOne' <||> inj NilOne'
+
+rBis5 :: Regex c Bis One
+rBis5 = Regex $ inj (ConsOne' 2 (inj (ConsTwo' 'a' any_)))
 
 cBis1 :: Wrap Integer One -> Regex (Wrap Integer) Bis One
 cBis1 x = Regex $ x <<- inj NilOne'

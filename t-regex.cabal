@@ -10,6 +10,7 @@ cabal-version:       >=1.10
 
 library
   exposed-modules:   Data.MultiGenerics,
+                     Test.QuickCheck.Arbitrary1,
                      Data.Regex.Generics,
                      Data.Regex.MultiGenerics,
                      Data.Regex.Example.Mono,
