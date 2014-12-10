@@ -224,6 +224,32 @@ example _  = []
 Notice that the pattern is always similar `with (\v1 v2 ... ->
 regular expression) -> Just (v1,v2,...)`.
 
+## Random generation
+
+You can use `t-regex` to generate random values of a type which satisfy a
+certain tree regular expression. Of course, you might always generate
+random values and then check that they match the given expression, but
+this is usually very costly and maybe even statistically impossible.
+Instead, you should use `arbitraryFromRegex`.
+
+```haskell
+instance Arbitrary Tree where
+  arbitrary = frequency
+    [ (1, return Leaf)
+    , (5, Branch <$> arbitrary <*> arbitrary <*> arbitrary) ]
+
+> arbitraryFromRegex regex2
+```
+
+Note that in the previous example we also gave an instance declaration
+for `Arbitrary`. This class comes from the `QuickCheck` package, and
+is needed to generate unconstrained random values for the case in
+which `any_` is found.
+
+Sometimes you may not be able or want to write such an instance. In that
+case, you can use `arbitraryFromRegexAndGen`, which takes an additional
+argument from which `any_` values are generated.
+
 ## Attribute grammars
 
 [Attribute grammars](https://www.haskell.org/haskellwiki/The_Monad.Reader/Issue4/Why_Attribute_Grammars_Matter)
