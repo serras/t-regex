@@ -15,6 +15,7 @@ library
                      Data.Regex.MultiGenerics,
                      Data.Regex.Example.Mono,
                      Data.Regex.Example.Multi,
+                     Data.Regex.Example.FPDag2015,
                      Data.Regex.TH,
                      Data.Regex.Rules,
                      Data.Regex.MultiRules

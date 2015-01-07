@@ -2,6 +2,8 @@
 -- | Quasi-quoters for doing pattern matching using tree regular expressions.
 module Data.Regex.TH (rx, mrx) where
 
+import Control.Applicative ((<$>))
+import Data.List (nub)
 import Data.Regex.Generics
 import qualified Data.Regex.MultiGenerics as M
 import qualified Language.Haskell.Exts as E
@@ -13,7 +15,7 @@ import Language.Haskell.TH.Quote
 rPat :: String -> Q Pat
 rPat s = case parseExp ("(" ++ s ++ ")") of
            ParseFailed _ msg -> fail msg
-           ParseOk expr -> do eName <- getFreeVars (getUnboundVarsE expr)
+           ParseOk expr -> do eName <- nub <$> getFreeVars (getUnboundVarsE expr)
                               let nullSrc  = E.SrcLoc "" 0 0
                                   fullExpr = E.App (E.Con (E.Qual (E.ModuleName "Data.Regex.Generics") (E.Ident "Regex"))) expr
                               case eName of
