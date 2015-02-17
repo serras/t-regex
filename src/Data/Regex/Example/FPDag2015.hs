@@ -4,17 +4,25 @@
 {-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances #-}
 module Data.Regex.Example.FPDag2015 where
 
+import Control.Applicative
 import Data.Regex.Generics
 import Data.Regex.TH
 import GHC.Generics
+import Test.QuickCheck
 
 data List_ a l = Cons_ a l | Nil_ deriving (Show, Generic1)
 type List a    = Fix (List_ a)
 
 pattern Cons x xs = Fix (Cons_ x xs)
 pattern Nil       = Fix Nil_
+
+instance Arbitrary a => Arbitrary (List a) where
+  arbitrary = frequency [ (1, return Nil)
+                        , (3, Cons <$> arbitrary <*> arbitrary) ]
 
 oneTwoOrOneThree :: Regex c (List_ Int)
 oneTwoOrOneThree = Regex $

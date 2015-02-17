@@ -1,6 +1,7 @@
 name:                t-regex
 version:             0.1.0.0
 synopsis:            Matchers and grammars using tree regular expressions
+license:             BSD3
 author:              Alejandro Serrano
 maintainer:          A.SerranoMena@uu.nl
 category:            Data
@@ -21,7 +22,7 @@ library
                      Data.Regex.MultiRules
   -- other-modules:       
   -- other-extensions:    
-  build-depends:     base >= 4.7,
+  build-depends:     base >= 4 && < 5,
                      containers,
                      recursion-schemes >= 4 && < 5,
                      template-haskell,
