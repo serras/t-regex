@@ -17,16 +17,15 @@ rPat s = case parseExp ("(" ++ s ++ ")") of
            ParseFailed _ msg -> fail msg
            ParseOk expr -> do eName <- nub <$> getFreeVars (getUnboundVarsE expr)
                               let nullSrc  = E.SrcLoc "" 0 0
-                                  fullExpr = E.App (E.Con (E.Qual (E.ModuleName "Data.Regex.Generics") (E.Ident "Regex"))) expr
                               case eName of
                                 []  -> return $ ViewP (AppE (VarE 'with)
-                                                            (toExp fullExpr))
+                                                            (toExp expr))
                                                       (ConP 'Just [ConP '() []])
                                 [v] -> return $ ViewP (AppE (VarE 'with)
-                                                            (toExp $ E.Lambda nullSrc [toIntegerVar v] fullExpr))
+                                                            (toExp $ E.Lambda nullSrc [toIntegerVar v] expr))
                                                       (ConP 'Just [toPat (E.PVar v)])
                                 vs  -> return $ ViewP (AppE (VarE 'with)
-                                                            (toExp $ E.Lambda nullSrc (map toIntegerVar vs) fullExpr))
+                                                            (toExp $ E.Lambda nullSrc (map toIntegerVar vs) expr))
                                                       (ConP 'Just [TupP $ map (toPat . E.PVar) vs])
 
 getUnboundVarsE :: E.Exp -> [E.Name]
@@ -71,7 +70,7 @@ toIntegerVar e = E.PatTypeSig (E.SrcLoc "" 0 0)
 --
 --   > pattern One_   = Inject One
 --   > pattern Two_ x = Inject (Two_ x)
---   > 
+--   >
 --   > f [rx| (\k -> x <<- One_ <||> y <<- Two_ (k#))^* |] = ...
 rx :: QuasiQuoter
 rx = QuasiQuoter { quotePat  = rPat
@@ -86,16 +85,15 @@ mrPat s = case parseExp ("(" ++ s ++ ")") of
             ParseOk expr -> do let (newExpr, unbound) = getUnboundVarsM expr
                                eName <- getFreeVarsM unbound
                                let nullSrc  = E.SrcLoc "" 0 0
-                                   fullExpr = E.App (E.Con (E.Qual (E.ModuleName "Data.Regex.MultiGenerics") (E.Ident "Regex"))) newExpr
                                case eName of
                                  []  -> return $ ViewP (AppE (VarE 'M.with)
-                                                             (toExp fullExpr))
+                                                             (toExp newExpr))
                                                        (ConP 'Just [ConP '() []])
                                  [(v,ty)] -> return $ ViewP (AppE (VarE 'M.with)
-                                                                  (toExp $ E.Lambda nullSrc [toVarM (v,ty)] fullExpr))
+                                                                  (toExp $ E.Lambda nullSrc [toVarM (v,ty)] newExpr))
                                                             (ConP 'Just [toPat (E.PVar v)])
                                  vs  -> return $ ViewP (AppE (VarE 'M.with)
-                                                             (toExp $ E.Lambda nullSrc (map toVarM vs) fullExpr))
+                                                             (toExp $ E.Lambda nullSrc (map toVarM vs) newExpr))
                                                        (ConP 'Just [TupP $ map (toPat . E.PVar . fst) vs])
 
 getUnboundVarsM :: E.Exp -> (E.Exp, [(E.Name, E.Type)])

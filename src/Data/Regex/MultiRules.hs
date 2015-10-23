@@ -142,7 +142,7 @@ stateToAction :: (EqM c, IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn
               => IxList c ixs
               -> (Fix f ix -> State (ActionState c inh syn ix) ())
               -> Action c f inh syn ix  -- Fix f ix -> inh ix -> Children c syn -> (Bool, Children c inh, syn ix)
-stateToAction nodes st term down up = 
+stateToAction nodes st term down up =
   let initialSyn = initialRest nodes up
       initial = ActionState True (InhAndSyn down mempty) initialSyn
       ActionState ok (InhAndSyn _ thisUp) rs = execState (st term) initial
@@ -165,15 +165,15 @@ finalDown (IxCons c rest) children =
 --   The action should take as extra parameter the node which was matched.
 (->>>) :: forall f (ix :: k) inh syn (ixs :: [k])
         . (IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn ixs)
-       => (forall c. Regex' c (Wrap Integer) f ix)
+       => Regex (Wrap Integer) f ix
        -> (Fix f ix -> State (ActionState (Wrap Integer) inh syn ix) ())
        -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
-(rx ->>> st) nodes = Rule (Regex rx) (stateToAction nodes st)
+(rx ->>> st) nodes = Rule rx (stateToAction nodes st)
 
 -- | Separates matching and attribute calculation on a rule.
 (->>) :: forall f (ix :: k) inh syn (ixs :: [k])
        . (IxListMonoid inh ixs, Monoid (syn ix), IxListMonoid syn ixs)
-      => (forall c. Regex' c (Wrap Integer) f ix)
+      => Regex (Wrap Integer) f ix
       -> State (ActionState (Wrap Integer) inh syn ix) ()
       -> IxList (Wrap Integer) ixs -> Rule (Wrap Integer) f inh syn
 (rx ->> st) nodes = (rx ->>> const st) nodes

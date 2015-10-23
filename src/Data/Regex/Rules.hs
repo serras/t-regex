@@ -92,13 +92,13 @@ stateToAction nodes st term down up =
 -- | Separates matching and attribute calculation on a rule.
 --   The action should take as extra parameter the node which was matched.
 (->>>) :: Monoid syn
-       => (forall k. Regex' k Integer f) -> (Fix f -> State (ActionState Integer inh syn) ())
+       => Regex Integer f -> (Fix f -> State (ActionState Integer inh syn) ())
        -> [Integer] -> Rule Integer f inh syn
-(rx ->>> st) nodes = (Regex rx, stateToAction nodes st)
+(rx ->>> st) nodes = (rx, stateToAction nodes st)
 
 -- | Separates matching and attribute calculation on a rule.
 (->>) :: Monoid syn
-      => (forall k. Regex' k Integer f) -> State (ActionState Integer inh syn) ()
+      => Regex Integer f -> State (ActionState Integer inh syn) ()
       -> [Integer] -> Rule Integer f inh syn
 rx ->> st = rx ->>> const st
 
@@ -144,18 +144,18 @@ instance Monoid syn =>
 
 instance Monoid syn =>
   RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
+              (Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn)
               (Rule Integer f inh syn) where
   rule r = r 1 2 3 [1,2,3]
 
 instance Monoid syn =>
   RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
+              (Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn)
               (Rule Integer f inh syn) where
   rule r = r 1 2 3 4 [1,2,3,4]
 
 instance Monoid syn =>
   RuleBuilder f inh syn
-              (Integer -> Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn) 
+              (Integer -> Integer -> Integer -> Integer -> Integer -> [Integer] -> Rule Integer f inh syn)
               (Rule Integer f inh syn) where
   rule r = r 1 2 3 4 5 [1,2,3,4,5]

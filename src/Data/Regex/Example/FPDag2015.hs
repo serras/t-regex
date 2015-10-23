@@ -25,11 +25,11 @@ instance Arbitrary a => Arbitrary (List a) where
                         , (3, Cons <$> arbitrary <*> arbitrary) ]
 
 oneTwoOrOneThree :: Regex c (List_ Int)
-oneTwoOrOneThree = Regex $
+oneTwoOrOneThree =
   inj $ Cons_ 1 (inj (Cons_ 2 $ inj Nil_) <||> inj (Cons_ 3 $ inj Nil_))
 
 oneTwoThree :: List Char -> Bool
-oneTwoThree [rx| iter (\k -> inj (Cons_ 'a' (inj $ Cons_ 'b' (inj $ Cons_ 'c' (k#)))) <||> _last <<- inj Nil_) |] = True
+oneTwoThree [rx| iter (\k -> inj (Cons_ 'a' (inj $ Cons_ 'b' (inj $ Cons_ 'c' k))) <||> _last <<- inj Nil_) |] = True
 oneTwoThree _ = False
 
 data Tree_ t = Node_ Int t t | Leaf_ Int deriving (Show, Generic1)
@@ -39,29 +39,29 @@ pattern Node x l r = Fix (Node_ x l r)
 pattern Leaf x     = Fix (Leaf_ x)
 
 matchAny :: Regex c Tree_
-matchAny = Regex $ any_
+matchAny = any_
 
 topTwo :: Regex c Tree_
-topTwo = Regex $ inj (Node_ 2 any_ any_)
+topTwo = inj (Node_ 2 any_ any_)
 
 shape1 :: Regex c Tree_
-shape1 = Regex $
+shape1 =
   inj $ Node_ 2 (inj $ Node_ 3 any_ any_)
                 (inj $ Node_ 4 any_ any_)
 
 shape2 :: Regex c Tree_
-shape2 = Regex $
+shape2 =
   inj $ Node_ __ (inj $ Node_ 3 any_ any_)
                  (inj $ Node_ 4 any_ any_)
 
 allTwos :: Regex c Tree_
-allTwos = Regex $ iter (\k -> inj (Node_ 2 (var k) (var k)) <||> inj (Leaf_ 2))
+allTwos = iter (\k -> inj (Node_ 2 k k) <||> inj (Leaf_ 2))
 
 allTwosPostfix :: Regex c Tree_
-allTwosPostfix = Regex ((\k -> inj (Node_ 2 (k#) (k#)) <||> inj (Leaf_ 2))^*)
+allTwosPostfix = ((\k -> inj (Node_ 2 k k) <||> inj (Leaf_ 2))^*)
 
 allLeaves :: Tree -> [Int]
-allLeaves [rx| iter (\k -> inj (Node_ __ (k#) (k#)) <||> leaves <<- inj (Leaf_ __)) |] =
+allLeaves [rx| iter (\k -> inj (Node_ __ k k) <||> leaves <<- inj (Leaf_ __)) |] =
   map (\(Leaf i) -> i) leaves   -- Note this is a Fix-ed element
 
 data Expr_ e = Plus_ e e | Times_ e e | Var_ Int deriving (Show, Generic1)

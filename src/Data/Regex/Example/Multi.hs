@@ -106,22 +106,22 @@ aBis2 :: FixOne
 aBis2 = ConsOne 1 (ConsTwo 'a' NilOne)
 
 rBis1 :: Regex (Wrap Char) Bis One
-rBis1 = Regex $ capture ('a'?) $ inj NilOne'
+rBis1 = capture ('a'?) $ inj NilOne'
 
 rBis2 :: Regex c Bis One
-rBis2 = Regex $ inj (ConsOne' 2 (inj NilTwo'))
+rBis2 = inj (ConsOne' 2 (inj NilTwo'))
 
 rBis3 :: Regex c Bis One
-rBis3 = Regex $ inj (ConsOne' 2 (inj (ConsTwo' 'a' (inj NilOne'))))
+rBis3 = inj (ConsOne' 2 (inj (ConsTwo' 'a' (inj NilOne'))))
 
 rBis4 :: Regex c Bis One
-rBis4 = Regex $ inj NilOne' <||> inj NilOne'
+rBis4 = inj NilOne' <||> inj NilOne'
 
 rBis5 :: Regex c Bis One
-rBis5 = Regex $ inj (ConsOne' 2 (inj (ConsTwo' 'a' any_)))
+rBis5 = inj (ConsOne' 2 (inj (ConsTwo' 'a' any_)))
 
 cBis1 :: Wrap Integer One -> Regex (Wrap Integer) Bis One
-cBis1 x = Regex $ x <<- inj NilOne'
+cBis1 x = x <<- inj NilOne'
 
 
 eBis1 :: FixOne -> [FixOne]
@@ -133,7 +133,7 @@ eBis2 [mrx| (x :: One) <<- inj NilOne' |] = x
 
 grammar1 :: IndexIndependentGrammar (Wrap Integer) Bis () String
 grammar1 = [
-    rule0 $ 
+    rule0 $
       inj NilOne' ->> do
         this.syn_ .= "NilOne"
   , rule $ \x ->
@@ -144,7 +144,7 @@ grammar1 = [
       inj (ConsOne' __ (x <<- any_)) ->>> \(ConsOne n _) -> do
         s <- use (at x . syn_)
         this.syn_ .= show n ++ " - " ++ s
-  , rule0 $ 
+  , rule0 $
       inj NilTwo' ->> do
         this.syn_ .= "NilTwo"
   , rule $ \x ->

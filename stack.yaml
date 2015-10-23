@@ -1,0 +1,7 @@
+resolver: lts-3.10
+packages:
+- '.'
+extra-deps:
+- recursion-schemes-4.1.2
+flags: {}
+extra-package-dbs: []

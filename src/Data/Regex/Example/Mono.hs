@@ -92,27 +92,25 @@ aRose2 :: Rose
 aRose2 = Rose 2 [Rose 2 [], Rose 2 [Rose 3 []]]
 
 rTree1 :: Regex String Tree'
-rTree1 = Regex $
-           iter $ \k ->
-             capture "x" $
-                    inj (Branch' 2 (square k) (square k))
-               <||> inj Leaf'
+rTree1 = iter $ \k ->
+           capture "x" $
+                  inj (Branch' 2 k k)
+             <||> inj Leaf'
 
 rTree2 :: Integer -> Regex Integer Tree'
-rTree2 c = Regex $
-             iter $ \k ->
-               capture c $
-                      inj (Branch' 2 (square k) (square k))
-                 <||> inj Leaf'
+rTree2 c = iter $ \k ->
+             capture c $
+                    inj (Branch' 2 k k)
+               <||> inj Leaf'
 
 pattern Branch_ n l r = Inject (Branch' n l r)
 pattern Leaf_         = Inject Leaf'
 
 rTree3 :: Integer -> Integer -> Regex Integer Tree'
-rTree3 c1 c2 = Regex ( (\k -> c1 <<- Branch_ 2 (k#) (k#) <||> c2 <<- Leaf_)^* )
+rTree3 c1 c2 = ( (\k -> c1 <<- Branch_ 2 k k <||> c2 <<- Leaf_)^* )
 
 rRose1 :: Regex String Rose'
-rRose1 = Regex $ iter $ \k -> capture "x" $ inj (Rose' 2 [square k])
+rRose1 = iter $ \k -> capture "x" $ inj (Rose' 2 [k])
 
 eWith1 :: Tree -> [Tree]
 eWith1 (with rTree2 -> Just e) = e
@@ -123,7 +121,7 @@ eWith2 (with rTree3 -> Just (_,e)) = e
 eWith2 _                           = error "What?"
 
 eWith2Bis :: Tree -> [Tree]
-eWith2Bis [rx| (\k -> branches <<- Branch_ 2 (k#) (k#) <||> leaves <<- Leaf_)^* |] = leaves
+eWith2Bis [rx| (\k -> branches <<- Branch_ 2 k k <||> leaves <<- Leaf_)^* |] = leaves
 eWith2Bis _  = []
 
 eWith3 :: Tree -> [Tree]
@@ -131,28 +129,28 @@ eWith3 [rx| x <<- Leaf_ |] = x
 eWith3 _                   = error "What?"
 
 eWith4 :: Tree -> [Int]
-eWith4 [rx| (\k -> x <<- inj (Branch' __ (k#) (k#)) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
+eWith4 [rx| (\k -> x <<- inj (Branch' __ k k) <||> e <<- Leaf_)^* |] = map (elt . unFix) x
 eWith4 _  = error "What?"
 
 unFix :: Fix f -> f (Fix f)
 unFix (Fix x) = x
 
 grammar1 :: Grammar String Tree' () String
-grammar1 = [ ( Regex $ inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
+grammar1 = [ ( inj (Branch' 2 ("l" <<- any_) ("r" <<- any_))
              , \_ _ children ->
                   ( True
                   , M.fromList [("l",()),("r",())]
                   , "(" ++ children ! "l"
                     ++ ")-SPECIAL-("
                     ++ children ! "r" ++ ")" ) )
-           , ( Regex $ inj (Branch' __ ("l" <<- any_) ("r" <<- any_))
+           , ( inj (Branch' __ ("l" <<- any_) ("r" <<- any_))
              , \(Branch e _ _) _ children ->
                   ( True
                   , M.fromList [("l",()),("r",())]
                   , "(" ++ children ! "l"
                     ++ ")-" ++ show e  ++ "-("
                     ++ children ! "r" ++ ")" ) )
-           , ( Regex $ Leaf_, \_ _ _ -> (True, M.empty, "leaf") )
+           , ( Leaf_, \_ _ _ -> (True, M.empty, "leaf") )
            ]
 
 grammar2 :: Grammar Integer Tree' () (String, Sum Integer)
